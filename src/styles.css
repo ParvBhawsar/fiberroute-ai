@@ -16,6 +16,7 @@ html {
 body {
   margin: 0;
   min-width: 320px;
+  background: #f1f5f9;
 }
 
 button,
@@ -24,9 +25,21 @@ select {
   font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(11, 79, 138, 0.25);
+  outline-offset: 2px;
+}
+
 .input {
   width: 100%;
-  border-radius: 8px;
+  border-radius: 4px;
   border: 1px solid rgb(203 213 225);
   background: white;
   padding: 0.75rem 0.875rem;
@@ -36,24 +49,61 @@ select {
 }
 
 .input:focus {
-  border-color: #1769e0;
-  box-shadow: 0 0 0 4px rgba(23, 105, 224, 0.12);
+  border-color: #0b4f8a;
+  box-shadow: 0 0 0 4px rgba(11, 79, 138, 0.12);
+}
+
+.field-label {
+  display: grid;
+  gap: 0.45rem;
+  color: #334155;
+  font-size: 0.875rem;
+  font-weight: 650;
+}
+
+.table-input {
+  width: 100%;
+  border-radius: 4px;
+  border: 1px solid rgb(203 213 225);
+  background: white;
+  padding: 0.45rem 0.55rem;
+  color: #0a2342;
+  outline: none;
+}
+
+.table-input:focus {
+  border-color: #0b4f8a;
+  box-shadow: 0 0 0 3px rgba(11, 79, 138, 0.1);
+}
+
+table {
+  border-collapse: collapse;
+}
+
+th {
+  white-space: nowrap;
 }
 
 .map-label {
-  fill: #0b1f3a;
-  font-size: 18px;
+  fill: #0a2342;
+  font-size: 17px;
   font-weight: 700;
 }
 
 .map-label-small {
-  fill: #33546a;
-  font-size: 16px;
+  fill: #334155;
+  font-size: 15px;
   font-weight: 650;
 }
 
 .map-metric {
-  fill: #0f9f6e;
+  fill: #1f7a4d;
   font-size: 26px;
+  font-weight: 800;
+}
+
+.map-legend-title {
+  fill: #0a2342;
+  font-size: 17px;
   font-weight: 800;
 }
