@@ -1,65 +1,54 @@
 # FiberRoute AI
 
-FiberRoute AI is a Phase 1 MVP for a government-style rural FiberNet planning and monitoring portal. It helps officials create last-mile fiber route plans for rural India, estimate cost and feasibility, review route risk, track survey status, and download an official-style planning report.
+FiberRoute AI is a government-style rural FiberNet planning and monitoring portal for last-mile broadband infrastructure. It provides role-based workspaces for route planning, feasibility estimation, GIS-style review, field verification, approval tracking, and planning report generation.
 
-The current version is browser-only and uses mock authentication, mock records, and deterministic planning logic. It does not require a backend, database, real GIS API, or production login security.
+## Product Overview
+
+The portal is designed for public infrastructure teams that need a structured way to plan rural fiber routes, compare risk and cost, coordinate survey updates, and move plans through review. The current implementation is a front-end application with local state and deterministic planning logic.
 
 ## Problem Statement
 
-Rural FiberNet planning often requires manual survey coordination, early cost estimation, route feasibility review, and multiple approval steps across district, state, field, and review teams. For a hackathon MVP, FiberRoute AI demonstrates how these workflows can be structured in one digital planning portal.
+Rural broadband planning requires coordination across district planners, state administrators, survey officers, and review authorities. Early route decisions need location inputs, terrain constraints, household coverage, public institution coverage, approvals, feasibility, risk, and cost estimates before a detailed DPR can be finalized.
 
-## Solution
+## Proposed Solution
 
-The portal provides a realistic planning dashboard with:
+FiberRoute AI brings these steps into one operational control panel:
 
-- Role-based mock login
+- Authorized role-based portal access
 - Village-level route planning form
-- Assisted planning recommendation
-- Infrastructure cost and timeline estimates
-- GIS-style mock map preview
-- Plan review and approval workflow
-- Field survey status updates
-- Downloadable official-style planning report
+- Infrastructure estimate and feasibility summary
+- GIS-style planning map with route, boundary, risk, road, and crossing layers
+- Plans, survey, and review tables
+- Recent activity feed
+- Route planning report download
 
-## What Makes This Submission Relevant
+## Target Users
 
-- It is shaped like a departmental tool, not a marketing landing page.
-- It covers the core planning workflow from village input to review and field verification.
-- It demonstrates role-based operational views without needing a backend.
-- It makes assumptions visible through feasibility, risk, cost components, approvals, and report disclaimers.
-- It is lightweight enough for Phase 1 while leaving a clear path to real GIS and government integrations.
+- District broadband planning teams
+- State digital infrastructure departments
+- Field survey officers
+- Technical review and approval authorities
+- Program monitoring teams for rural connectivity rollout
 
 ## User Roles
 
-- District Planner: creates village FiberNet route plans, generates estimates, and submits plans for review.
-- State Admin: views state-level planning metrics, district submitted plans, and mock approve or reject actions.
-- Field Survey Officer: views assigned survey routes, updates survey status, marks terrain difficulty, and records field remarks.
-- Review Authority: reviews route summary, cost, risk, feasibility, and marks plans approved, sent back, or requiring field verification.
+- District Planner: creates route plans, generates estimates, and submits plans for review.
+- State Admin: monitors plans, budgets, risk concentration, and approval status across districts.
+- Field Survey Officer: updates assigned route surveys, terrain difficulty, and field remarks.
+- Review Authority: reviews feasibility, cost, risk, approvals, and field verification requirements.
 
 ## Features
 
-- Government-style portal header, top strip, navigation, cards, tables, badges, and report sections
-- Mock login screen with role selection
-- Dynamic dashboard cards for route plans, villages covered, fiber length, budget, high-risk routes, approvals, and feasibility
-- Recent activity feed that updates after route, review, and survey actions
-- Expanded planner inputs for state, district, block, Gram Panchayat, village, terrain, household count, institutions, road availability, crossings, and forest clearance
-- Generated route output with route ID, route type, fiber length, cost, household coverage, institution coverage, risk, feasibility, complexity, timeline, and required approvals
-- Improved SVG GIS-style planning map with existing fiber node, proposed path, target village, Gram Panchayat boundary, right-of-way corridor, terrain zone, clearance/risk zone, proposed FDH, habitation cluster, crossings, chainage, legend, north arrow, scale, and route detail panel
-- Plans, survey, and review tables with mock workflow actions
-- `.txt` planning report download with official-style sections
-- Responsive layout for mobile, tablet, and desktop
-
-## Phase 1 Evaluation Notes
-
-This MVP is designed to show product thinking and implementation feasibility:
-
-- District officials can create a plan and submit it for review.
-- State admins can monitor budget, risk, and approval status.
-- Field officers can update survey status and terrain remarks.
-- Review authorities can assess risk, cost, feasibility, and required approvals.
-- Generated reports include location details, planning inputs, route output, cost, risk, approvals, next steps, and a clear MVP disclaimer.
-
-The prototype intentionally avoids real authentication, real maps, and permanent storage so the hackathon version remains easy to run locally.
+- Official portal-style login screen with role selection
+- Government-style header, sidebar navigation, cards, tables, badges, and report sections
+- Dynamic KPI cards for route plans, villages, planned fiber length, budget, risk, and feasibility
+- Expanded route planning form with administrative, coverage, terrain, road, crossing, and clearance inputs
+- Assisted Planning Recommendation with infrastructure estimate, risk, feasibility, timeline, and required approvals
+- SVG-based GIS planning map with Gram Panchayat boundary, existing fiber node, proposed route, target village, road line, river/railway crossing, terrain risk zone, legend, north arrow, scale indicator, and route metadata
+- Plans table, survey table, review table, and status workflow actions
+- Recent activity feed that updates after planning, review, and survey actions
+- Text report download with location details, planning inputs, infrastructure estimate, risk and feasibility summary, required approvals, and next recommended actions
+- Responsive layout for desktop, laptop, tablet, and mobile
 
 ## Tech Stack
 
@@ -67,11 +56,20 @@ The prototype intentionally avoids real authentication, real maps, and permanent
 - Vite
 - Tailwind CSS
 - lucide-react icons
-- Browser-only mock data and deterministic logic
+- Browser local state and deterministic planning logic
 
 ## How Codex Was Used
 
-Codex was used to convert the original MVP into a more realistic Indian government-style GIS planning portal. The work included UI restructuring, role-based mock flows, planning logic improvements, map visualization, dashboard tables, report generation, responsive styling, README updates, and build verification.
+Codex was used to develop and refine the portal UI, role-based workflows, route planning logic, GIS-style SVG map, responsive control-panel layout, status tables, report generation, documentation, and build verification.
+
+## Current Status
+
+- Front-end portal is implemented.
+- Role-based login flow is available for local use.
+- Route planning, dashboard metrics, tables, activity feed, GIS preview, and report download are functional.
+- Planning records are stored in browser state during the session.
+- Route outputs use deterministic estimation logic for local operation.
+- No backend, database, real authentication, payment, or real map API is included.
 
 ## Local Setup
 
@@ -101,20 +99,21 @@ npm.cmd run dev
 npm.cmd run build
 ```
 
-## Current MVP Status
+## Deployment Steps
 
-- Phase 1 front-end portal is complete.
-- Authentication is mocked. Any credentials work.
-- Planning records, surveys, reviews, and activity feed are stored only in React state.
-- Route estimates are deterministic and intended for demonstration, not real engineering approval.
-- No backend, database, real map API, or government system integration is included yet.
+Create a production build:
+
+```bash
+npm run build
+```
+
+Deploy the generated `dist` folder to any static hosting platform, internal web server, or object storage static-site hosting service.
 
 ## Future Scope
 
-- Real GIS layers and official map tiles
-- Satellite and terrain datasets
-- Secure authentication and department-level access controls
-- Backend persistence for plans, surveys, approvals, and reports
-- Route optimization engine with right-of-way, cost, and terrain constraints
-- OpenAI-powered planning assistant for DPR drafting and field query support
-- State and national dashboards for rollout monitoring
+- Backend persistence for plans, surveys, reviews, and reports
+- Secure authentication and department-level role management
+- Real GIS layers, official map tiles, and satellite or terrain overlays
+- Route optimization with right-of-way, terrain, clearance, and cost constraints
+- DPR generation workflow and document exports
+- Integration with state and national broadband monitoring dashboards

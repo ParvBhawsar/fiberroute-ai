@@ -212,15 +212,15 @@ function LoginPage({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className="min-h-screen w-full overflow-x-hidden bg-slate-100 text-slate-900">
       <TopStrip />
       <header className="border-b border-slate-300 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-5 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex min-w-0 items-center gap-4">
             <div className="flex h-14 w-14 items-center justify-center border border-slate-300 bg-gov-navy text-white">
               <RadioTower size={28} />
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wide text-gov-saffron">Digital Connectivity Planning System</p>
               <h1 className="text-2xl font-bold text-gov-navy">FiberRoute AI</h1>
               <p className="text-sm text-slate-600">Rural FiberNet Planning & Monitoring Portal</p>
@@ -232,14 +232,14 @@ function LoginPage({ onLogin }) {
         </div>
       </header>
 
-      <main className="mx-auto grid max-w-7xl gap-8 px-5 py-10 lg:grid-cols-[1fr_0.92fr]">
-        <section className="border border-slate-300 bg-white p-6">
-          <p className="text-sm font-semibold uppercase tracking-wide text-gov-green">Secure mock access</p>
+      <main className="mx-auto grid w-full max-w-7xl min-w-0 gap-6 overflow-x-hidden px-4 py-8 sm:px-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)]">
+        <section className="min-w-0 overflow-hidden border border-slate-300 bg-white p-6">
+          <p className="text-sm font-semibold uppercase tracking-wide text-gov-green">Secure portal access</p>
           <h2 className="mt-2 text-3xl font-bold text-gov-navy">Rural connectivity planning portal</h2>
           <p className="mt-4 max-w-2xl leading-7 text-slate-600">
-            Sign in as a district, state, survey, or review official to access route planning, monitoring dashboards, field verification records, and approval workflows. This MVP uses mock authentication for local demonstration.
+            Authorized access for route planning, review, field verification, and monitoring under the Rural FiberNet Planning & Monitoring Portal.
           </p>
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
+          <div className="mt-8 grid min-w-0 gap-3 sm:grid-cols-2">
             {roles.map((item) => (
               <button
                 key={item}
@@ -254,14 +254,14 @@ function LoginPage({ onLogin }) {
           </div>
         </section>
 
-        <section className="border border-slate-300 bg-white p-6">
+        <section className="min-w-0 overflow-hidden border border-slate-300 bg-white p-6">
           <div className="mb-6 flex items-center gap-3 border-b border-slate-200 pb-4">
             <div className="flex h-10 w-10 items-center justify-center bg-gov-navy text-white">
               <LockKeyhole size={20} />
             </div>
-            <div>
+            <div className="min-w-0">
               <h2 className="text-xl font-bold text-gov-navy">Portal Login</h2>
-              <p className="text-sm text-slate-600">Any credentials are accepted for this MVP.</p>
+              <p className="text-sm text-slate-600">Authorized access for route planning, review, and monitoring.</p>
             </div>
           </div>
           <form onSubmit={submitLogin} className="grid gap-4">
@@ -313,7 +313,7 @@ function TopStrip() {
       <div className="border-b border-slate-300 bg-gov-navy text-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-1 px-5 py-2 text-xs sm:flex-row sm:items-center sm:justify-between">
           <span>Government of India | BharatNet Last-Mile Planning Cell</span>
-          <span>Phase 1 demonstration system | Mock data only</span>
+          <span>Digital Connectivity Planning System</span>
         </div>
       </div>
     </div>
@@ -322,22 +322,22 @@ function TopStrip() {
 
 function PortalHeader({ session, onLogout }) {
   return (
-    <header className="border-b border-slate-300 bg-white">
-      <div className="flex flex-col gap-4 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-6">
-        <div className="flex items-center gap-4">
+    <header className="w-full max-w-full border-b border-slate-300 bg-white">
+      <div className="flex min-w-0 flex-col gap-4 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-6">
+        <div className="flex min-w-0 items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center border border-slate-300 bg-gov-navy text-white">
             <Route size={25} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-gov-saffron">Digital Connectivity Planning System</p>
-            <h1 className="text-2xl font-bold text-gov-navy">FiberRoute AI Control Panel</h1>
-            <p className="text-sm text-slate-600">Rural FiberNet Planning & Monitoring Portal | Ministry-style MVP</p>
+            <h1 className="break-words text-2xl font-bold text-gov-navy">FiberRoute AI Control Panel</h1>
+            <p className="text-sm text-slate-600">Rural FiberNet Planning & Monitoring Portal</p>
           </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="border border-slate-300 bg-slate-50 px-4 py-2 text-sm">
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="min-w-0 border border-slate-300 bg-slate-50 px-4 py-2 text-sm">
             <span className="font-semibold text-gov-navy">{session.role}</span>
-            <span className="text-slate-500"> | {session.email}</span>
+            <span className="break-all text-slate-500"> | {session.email}</span>
           </div>
           <button onClick={onLogout} className="border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Logout
@@ -345,9 +345,9 @@ function PortalHeader({ session, onLogout }) {
         </div>
       </div>
       <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-600 lg:px-6">
-        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <span>Operational module: route planning, field verification, review, and monitoring</span>
-          <span>System status: Online | Data source: Mock Phase 1 records</span>
+          <span>System status: Online | Planning data source: Department planning records</span>
         </div>
       </div>
     </header>
@@ -366,23 +366,23 @@ function OperationalSidebar({ role, plan }) {
   ];
 
   return (
-    <aside className="border-b border-slate-300 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:shrink-0 lg:border-b-0 lg:border-r">
-      <div className="border-b border-slate-200 p-4">
+    <aside className="w-full max-w-full overflow-hidden border-b border-slate-300 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r xl:w-72">
+      <div className="min-w-0 border-b border-slate-200 p-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-gov-saffron">Logged-in role</p>
         <p className="mt-1 font-bold text-gov-navy">{role}</p>
-        <p className="mt-2 text-xs leading-5 text-slate-600">Current route file: <span className="font-semibold">{plan.routeId}</span></p>
+        <p className="mt-2 break-words text-xs leading-5 text-slate-600">Current route file: <span className="font-semibold">{plan.routeId}</span></p>
       </div>
-      <nav className="flex gap-2 overflow-x-auto p-3 text-sm font-semibold lg:grid lg:gap-1 lg:overflow-visible">
+      <nav className="grid grid-cols-1 gap-1 p-3 text-sm font-semibold sm:grid-cols-2 lg:grid-cols-1">
         {items.map(([label, id, Icon]) => (
-          <a key={id} href={`#${id}`} className="flex min-w-max items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 hover:border-gov-blue hover:bg-white hover:text-gov-navy lg:min-w-0">
+          <a key={id} href={`#${id}`} className="flex min-w-0 items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 hover:border-gov-blue hover:bg-white hover:text-gov-navy">
             <Icon size={16} />
-            {label}
+            <span className="truncate">{label}</span>
           </a>
         ))}
       </nav>
       <div className="hidden border-t border-slate-200 p-4 text-xs leading-5 text-slate-600 lg:block">
-        <p className="font-semibold uppercase tracking-wide text-gov-navy">Phase 1 Scope</p>
-        <p className="mt-2">Mock authentication, mock planning data, deterministic estimates, no live GIS services.</p>
+        <p className="font-semibold uppercase tracking-wide text-gov-navy">Operational Scope</p>
+        <p className="mt-2">Route planning, field verification, review workflow, and monitoring records.</p>
       </div>
     </aside>
   );
@@ -397,9 +397,9 @@ function DashboardCard({ icon: Icon, label, value, helper, accent = 'blue' }) {
   };
 
   return (
-    <div className={`border border-slate-300 border-l-4 bg-white p-4 ${accents[accent]}`}>
+    <div className={`min-w-0 max-w-full overflow-hidden border border-slate-300 border-l-4 bg-white p-4 ${accents[accent]}`}>
       <div className="flex items-start justify-between gap-4">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-600">{label}</p>
           <p className="mt-2 break-words text-xl font-bold text-gov-navy 2xl:text-2xl">{value}</p>
           {helper ? <p className="mt-1 text-xs font-medium text-slate-500">{helper}</p> : null}
@@ -495,33 +495,33 @@ function PortalDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
+    <div className="min-h-screen w-full overflow-x-hidden bg-slate-100 text-slate-900">
       <TopStrip />
       <PortalHeader session={session} onLogout={() => setSession(null)} />
-      <div className="lg:flex">
+      <div className="w-full max-w-full min-w-0 overflow-x-hidden lg:flex">
         <OperationalSidebar role={session.role} plan={plan} />
-        <main className="min-w-0 flex-1 px-4 py-5 lg:px-6">
-          <section id="dashboard" className="mb-5 border border-slate-300 bg-white p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+        <main className="min-w-0 max-w-full flex-1 basis-0 overflow-x-hidden px-4 py-5 lg:px-6">
+          <section id="dashboard" className="mb-5 min-w-0 overflow-hidden border border-slate-300 bg-white p-4">
+            <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Operational Dashboard</p>
                 <h2 className="mt-1 text-2xl font-bold text-gov-navy">{session.role} Workspace</h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{roleDescription(session.role)}</p>
               </div>
-              <div className="grid gap-2 text-sm sm:grid-cols-2 lg:text-right">
-                <div className="border border-slate-300 bg-slate-50 px-4 py-3">
+              <div className="grid min-w-0 gap-2 text-sm sm:grid-cols-2 lg:text-right">
+                <div className="min-w-0 border border-slate-300 bg-slate-50 px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Current route file</p>
-                  <p className="font-bold text-gov-navy">{plan.routeId}</p>
+                  <p className="break-words font-bold text-gov-navy">{plan.routeId}</p>
                 </div>
-                <div className="border border-slate-300 bg-slate-50 px-4 py-3">
+                <div className="min-w-0 border border-slate-300 bg-slate-50 px-4 py-3">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Planning district</p>
-                  <p className="font-bold text-gov-navy">{form.district}, {form.state}</p>
+                  <p className="break-words font-bold text-gov-navy">{form.district}, {form.state}</p>
                 </div>
               </div>
             </div>
           </section>
 
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
             <DashboardCard icon={FileText} label="Total Route Plans" value={metrics.totalRoutePlans} helper={`${metrics.approved} approved`} accent="blue" />
             <DashboardCard icon={Users} label="Villages Covered" value={metrics.villagesCovered} helper="unique villages" accent="green" />
             <DashboardCard icon={Route} label="Fiber Length" value={`${formatNumber(metrics.fiberLength)} km`} helper="planned network" accent="blue" />
@@ -545,7 +545,7 @@ function PortalDashboard() {
             downloadReport={downloadReport}
           />
           <footer className="mt-6 border-t border-slate-300 bg-white px-5 py-4 text-center text-sm text-slate-600">
-            Built for AI Builders Hackathon by Outskill and OpenAI | FiberRoute AI Phase 1 MVP
+            FiberRoute AI | Rural FiberNet Planning & Monitoring Portal
           </footer>
         </main>
       </div>
@@ -560,7 +560,7 @@ function RolePanel(props) {
     return (
       <PortalGrid>
         <RoleBrief role={role} items={['Monitor district plan submissions', 'Check high-risk route concentration', 'Approve or reject routes for administrative processing']} />
-        <div className="grid gap-5 xl:grid-cols-[1fr_0.82fr]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
           <RecentActivity activities={props.activities} />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
         </div>
@@ -575,7 +575,7 @@ function RolePanel(props) {
       <PortalGrid>
         <RoleBrief role={role} items={['Open assigned survey routes', 'Update terrain difficulty and site remarks', 'Flag routes that need verification before DPR approval']} />
         <SurveyTable surveys={props.surveys} onUpdate={props.updateSurvey} />
-        <div className="grid gap-5 xl:grid-cols-[1fr_0.65fr]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.65fr)]">
           <GISPreview form={props.form} plan={props.plan} />
           <RecentActivity activities={props.activities} />
         </div>
@@ -587,7 +587,7 @@ function RolePanel(props) {
     return (
       <PortalGrid>
         <RoleBrief role={role} items={['Review current route estimate', 'Check cost, risk, approvals, and feasibility', 'Approve, send back, or mark for field verification']} />
-        <div className="grid gap-5 xl:grid-cols-[1fr_0.72fr]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)]">
           <RouteOutput plan={props.plan} form={props.form} onSubmit={props.submitPlan} onDownload={props.downloadReport} reviewMode />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
         </div>
@@ -601,13 +601,11 @@ function RolePanel(props) {
     <PortalGrid>
       <RoleBrief role={role} items={['Create village route plan', 'Generate route output and planning report', 'Submit plan for review by state or authority']} />
       <PlannerForm form={props.form} updateField={props.updateField} onGenerate={props.generateRoute} onSubmit={props.submitPlan} />
-      <div className="grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
-        <GISPreview form={props.form} plan={props.plan} />
-        <RouteOutput plan={props.plan} form={props.form} onSubmit={props.submitPlan} onDownload={props.downloadReport} />
-      </div>
-      <div className="grid gap-5 xl:grid-cols-[1fr_0.68fr]">
+      <GISPreview form={props.form} plan={props.plan} />
+      <RouteOutput plan={props.plan} form={props.form} onSubmit={props.submitPlan} onDownload={props.downloadReport} />
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.68fr)]">
         <PlansTable plans={props.plans} onStatus={props.updatePlanStatus} title="Village Route Plans" />
-        <div className="grid gap-5">
+        <div className="grid min-w-0 gap-5">
           <RecentActivity activities={props.activities} />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
         </div>
@@ -617,20 +615,20 @@ function RolePanel(props) {
 }
 
 function PortalGrid({ children }) {
-  return <div className="mt-5 grid gap-5">{children}</div>;
+  return <div className="mt-5 grid min-w-0 gap-5">{children}</div>;
 }
 
 function RoleBrief({ role, items }) {
   return (
-    <section className="border border-slate-300 bg-white p-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
+    <section className="min-w-0 max-w-full overflow-hidden border border-slate-300 bg-white p-4">
+      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-gov-saffron">Role-based access view</p>
           <h3 className="text-lg font-bold text-gov-navy">{role} Responsibilities</h3>
         </div>
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 gap-2 md:grid-cols-3">
           {items.map((item) => (
-            <div key={item} className="border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <div key={item} className="min-w-0 break-words border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
               {item}
             </div>
           ))}
@@ -642,21 +640,21 @@ function RoleBrief({ role, items }) {
 
 function SectionCard({ id, icon: Icon, eyebrow, title, children, action, description }) {
   return (
-    <section id={id} className="border border-slate-300 bg-white">
-      <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
+    <section id={id} className="min-w-0 max-w-full overflow-hidden border border-slate-300 bg-white">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center bg-slate-100 text-gov-navy">
             <Icon size={20} />
           </div>
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-gov-green">{eyebrow}</p>
-            <h3 className="text-lg font-bold text-gov-navy">{title}</h3>
+            <h3 className="break-words text-lg font-bold text-gov-navy">{title}</h3>
             {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
           </div>
         </div>
         {action}
       </div>
-      <div className="p-5">{children}</div>
+      <div className="min-w-0 p-4 sm:p-5">{children}</div>
     </section>
   );
 }
@@ -670,23 +668,23 @@ function PlannerForm({ form, updateField, onGenerate, onSubmit }) {
       title="Create New FiberNet Route Plan"
       description="Enter administrative location, route constraints, and service coverage inputs for preliminary DPR preparation."
     >
-      <form onSubmit={onGenerate} className="grid gap-4">
-        <div className="grid gap-4 md:grid-cols-3">
+      <form onSubmit={onGenerate} className="grid min-w-0 gap-4">
+        <div className="grid min-w-0 gap-4 md:grid-cols-3">
           <TextInput label="State / UT" value={form.state} onChange={(value) => updateField('state', value)} />
           <TextInput label="District name" value={form.district} onChange={(value) => updateField('district', value)} />
           <TextInput label="Block / Taluka" value={form.block} onChange={(value) => updateField('block', value)} />
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2">
           <TextInput label="Gram Panchayat" value={form.gramPanchayat} onChange={(value) => updateField('gramPanchayat', value)} />
           <TextInput label="Village name" value={form.village} onChange={(value) => updateField('village', value)} />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <TextInput label="Distance from existing fiber node (km)" type="number" value={form.distance} onChange={(value) => updateField('distance', value)} />
           <SelectInput label="Predominant terrain category" value={form.terrain} options={Object.keys(terrainProfiles)} onChange={(value) => updateField('terrain', value)} />
           <TextInput label="Households to be covered" type="number" value={form.households} onChange={(value) => updateField('households', value)} />
           <TextInput label="Public institutions to connect" type="number" value={form.institutions} onChange={(value) => updateField('institutions', value)} />
         </div>
-        <div className="grid gap-4 md:grid-cols-4">
+        <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <SelectInput label="Planning priority" value={form.priority} options={Object.keys(priorityProfiles)} onChange={(value) => updateField('priority', value)} />
           <SelectInput label="Road-side alignment available" value={form.roadAvailable} options={['Yes', 'No']} onChange={(value) => updateField('roadAvailable', value)} />
           <SelectInput label="River / railway crossing involved" value={form.crossingRequired} options={['Yes', 'No']} onChange={(value) => updateField('crossingRequired', value)} />
@@ -753,29 +751,29 @@ function RouteOutput({ plan, form, onSubmit, onDownload, reviewMode = false }) {
       description="Preliminary estimate for administrative screening. Field verification is required before final approval."
       action={<StatusBadge status={plan.riskScore >= 75 ? 'Field Verification Required' : 'Draft'} />}
     >
-      <div className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="overflow-x-auto border border-slate-300">
-          <table className="min-w-full text-left text-sm">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+        <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
+          <table className="w-full min-w-[620px] text-left text-sm">
             <tbody>
               {outputRows.map(([label, value]) => (
                 <tr key={label} className="border-b border-slate-200 last:border-0">
                   <th className="w-56 bg-slate-50 px-4 py-3 font-semibold text-slate-700">{label}</th>
-                  <td className="px-4 py-3 text-slate-700">{value}</td>
+                  <td className="break-words px-4 py-3 text-slate-700">{value}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <div className="grid content-start gap-4">
+        <div className="grid min-w-0 content-start gap-4">
           <div className="border border-slate-300 bg-slate-50 p-4">
             <p className="text-sm font-semibold text-gov-navy">Planning Recommendation Note</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">{plan.note}</p>
           </div>
           <div className="border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <p className="font-semibold">Departmental review note</p>
-            <p className="mt-1 leading-6">Cost and risk values are indicative for Phase 1 screening. Final DPR should include survey drawings, permissions, and verified bill of quantities.</p>
+            <p className="mt-1 leading-6">Cost and risk values are indicative for departmental screening. Final DPR should include survey drawings, permissions, and verified bill of quantities.</p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <MiniMetric label="Civil works" value={formatCurrency(plan.civilCost)} />
             <MiniMetric label="Electronics" value={formatCurrency(plan.electronicsCost)} />
             <MiniMetric label="Approvals" value={formatCurrency(plan.approvalsCost)} />
@@ -827,7 +825,7 @@ function ReportDownloadPanel({ plan, form, onDownload }) {
           <Download size={17} />
           Download .txt Report
         </button>
-        <p className="text-xs leading-5 text-slate-500">This MVP report is not a final DPR or administrative sanction. It is intended for Phase 1 screening and demo review.</p>
+        <p className="text-xs leading-5 text-slate-500">This planning report is intended for departmental screening and field verification before DPR finalization.</p>
       </div>
     </SectionCard>
   );
@@ -846,12 +844,14 @@ function GISPreview({ form, plan }) {
       title="Proposed Route Alignment Map"
       description="Infrastructure planning sketch with administrative boundary, proposed alignment, crossing points, terrain risk zones, and route metadata."
     >
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="overflow-hidden border border-slate-400 bg-[#eef3ef]">
-          <div className="border-b border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Planning map sheet | Administrative boundary, ROW corridor, road, crossing, and terrain risk layers
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
+        <div className="w-full min-w-0 max-w-full overflow-hidden border border-slate-400 bg-[#eef3ef]">
+          <div className="border-b border-slate-300 bg-white px-4 py-3">
+            <p className="text-sm font-bold uppercase tracking-wide text-gov-navy">Planning Map Sheet</p>
+            <p className="mt-1 whitespace-normal text-sm leading-5 text-slate-600">Administrative boundary, road corridor, crossing and terrain risk layers</p>
           </div>
-          <svg viewBox="0 0 960 560" className="h-[380px] w-full sm:h-[500px]" role="img" aria-label="Official style GIS planning map preview">
+          <div className="h-[400px] w-full max-w-full overflow-hidden sm:h-[440px] xl:h-[560px]">
+          <svg viewBox="0 0 960 560" preserveAspectRatio="xMidYMid meet" className="block h-full w-full max-w-full" role="img" aria-label="Official style GIS planning map preview">
             <defs>
               <pattern id="govGrid" width="32" height="32" patternUnits="userSpaceOnUse">
                 <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#cbd8d3" strokeWidth="0.8" />
@@ -962,27 +962,27 @@ function GISPreview({ form, plan }) {
               <text x="142" y="25" className="map-label-small">2 km</text>
             </g>
           </svg>
+          </div>
         </div>
-        <aside className="border border-slate-400 bg-white">
+        <aside className="min-w-0 border border-slate-400 bg-white">
           <div className="border-b border-slate-300 bg-gov-navy px-4 py-3 text-white">
             <p className="text-sm font-bold uppercase tracking-wide">Route Metadata</p>
             <p className="mt-1 text-xs text-blue-100">Planning map attributes</p>
           </div>
-          <div className="grid gap-3 p-4 text-sm">
-            <DetailRow label="Route ID" value={plan.routeId} />
-            <DetailRow label="Map sheet" value={`${form.district}-${form.block}-01`} />
-            <DetailRow label="Gram Panchayat" value={form.gramPanchayat} />
-            <DetailRow label="Fiber length" value={`${plan.fiberLength} km`} />
-            <DetailRow label="Terrain type" value={form.terrain} />
-            <DetailRow label="Risk zone" value={`${riskLabel(plan.riskScore)} (${plan.riskScore}/100)`} />
-            <DetailRow label="Feasibility" value={`${plan.feasibilityScore}/100`} />
-            <DetailRow label="Duct / aerial" value={`${plan.ductKm} / ${plan.aerialKm} km`} />
-            <DetailRow label="Estimated cost" value={formatCurrency(plan.estimatedCost)} />
-            <DetailRow label="Timeline" value={plan.timeline} />
-            <DetailRow label="Approvals" value={`${plan.requiredApprovals.length} items`} />
+          <div className="grid min-w-0 gap-0 p-4 text-sm">
+            <MapMetadataRow label="Route ID" value={plan.routeId} />
+            <MapMetadataRow label="Map sheet" value={`${form.district}-${form.block}-01`} />
+            <MapMetadataRow label="Gram Panchayat" value={form.gramPanchayat} />
+            <MapMetadataRow label="Fiber length" value={`${plan.fiberLength} km`} />
+            <MapMetadataRow label="Terrain type" value={form.terrain} />
+            <MapMetadataRow label="Risk zone" value={`${riskLabel(plan.riskScore)} (${plan.riskScore}/100)`} />
+            <MapMetadataRow label="Feasibility" value={`${plan.feasibilityScore}/100`} />
+            <MapMetadataRow label="Duct / aerial" value={`${plan.ductKm} / ${plan.aerialKm} km`} />
+            <MapMetadataRow label="Estimated cost" value={formatCurrency(plan.estimatedCost)} />
+            <MapMetadataRow label="Timeline" value={plan.timeline} />
           </div>
           <div className="border-t border-slate-300 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
-            Field note: alignment, crossings, and risk zones are mock planning layers for Phase 1 review. Final DPR requires verified survey drawings.
+            Field note: alignment, crossings, and risk zones are planning layers for departmental review. Final DPR requires verified survey drawings.
           </div>
         </aside>
       </div>
@@ -992,9 +992,18 @@ function GISPreview({ form, plan }) {
 
 function DetailRow({ label, value }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-2 last:border-0">
+    <div className="flex min-w-0 items-start justify-between gap-4 border-b border-slate-200 pb-2 last:border-0">
       <span className="text-slate-500">{label}</span>
-      <span className="text-right font-semibold text-gov-navy">{value}</span>
+      <span className="min-w-0 break-words text-right font-semibold text-gov-navy">{value}</span>
+    </div>
+  );
+}
+
+function MapMetadataRow({ label, value }) {
+  return (
+    <div className="grid min-w-0 grid-cols-[128px_minmax(0,1fr)] gap-3 border-b border-slate-200 py-3 last:border-0 sm:grid-cols-[148px_minmax(0,1fr)]">
+      <span className="whitespace-nowrap text-slate-500">{label}</span>
+      <span className="min-w-0 break-words text-right font-semibold text-gov-navy">{value}</span>
     </div>
   );
 }
@@ -1002,8 +1011,8 @@ function DetailRow({ label, value }) {
 function PlansTable({ plans, onStatus, title, canApprove = false }) {
   return (
     <SectionCard id="plans-table" icon={TableProperties} eyebrow="Planning Records" title={title}>
-      <div className="overflow-x-auto border border-slate-300">
-        <table className="min-w-[1040px] w-full text-left text-sm">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
+        <table className="w-full min-w-[920px] text-left text-sm">
           <thead className="bg-gov-navy text-white">
             <tr>
               {['Route ID', 'District', 'Block', 'Village', 'Fiber Length', 'Estimated Cost', 'Status', 'Risk', 'Feasibility', 'Updated', 'Action'].map((item) => (
@@ -1014,12 +1023,12 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
           <tbody>
             {plans.map((item) => (
               <tr key={item.routeId} className="border-b border-slate-200 bg-white last:border-0">
-                <td className="px-4 py-3 font-semibold text-gov-navy">{item.routeId}</td>
+                <td className="max-w-40 break-words px-4 py-3 font-semibold text-gov-navy">{item.routeId}</td>
                 <td className="px-4 py-3">{item.district}</td>
                 <td className="px-4 py-3">{item.block || '-'}</td>
                 <td className="px-4 py-3">{item.village}</td>
                 <td className="px-4 py-3">{item.fiberLength} km</td>
-                <td className="px-4 py-3">{formatCurrency(item.estimatedCost)}</td>
+                <td className="whitespace-nowrap px-4 py-3">{formatCurrency(item.estimatedCost)}</td>
                 <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
                 <td className="px-4 py-3">{item.riskScore}/100 {riskLabel(item.riskScore)}</td>
                 <td className="px-4 py-3">{item.feasibilityScore || 70}/100</td>
@@ -1046,8 +1055,8 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
 function SurveyTable({ surveys, onUpdate }) {
   return (
     <SectionCard id="route-planning" icon={ListChecks} eyebrow="Field Survey Module" title="Assigned Survey Routes">
-      <div className="overflow-x-auto border border-slate-300">
-        <table className="min-w-[820px] w-full text-left text-sm">
+      <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-gov-navy text-white">
             <tr>
               {['Route ID', 'Village', 'Officer', 'Survey Status', 'Terrain Difficulty', 'Field Remarks'].map((item) => (
@@ -1090,10 +1099,10 @@ function ReviewTable({ plans, onStatus }) {
     <SectionCard id="reports" icon={ClipboardCheck} eyebrow="Review Desk" title="Plans Pending Review or Verification">
       <div className="grid gap-3">
         {reviewPlans.map((item) => (
-          <div key={item.routeId} className="border border-slate-300 bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="font-bold text-gov-navy">{item.routeId} - {item.village}, {item.district}</p>
+          <div key={item.routeId} className="min-w-0 border border-slate-300 bg-white p-4">
+            <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0">
+                <p className="break-words font-bold text-gov-navy">{item.routeId} - {item.village}, {item.district}</p>
                 <p className="mt-1 text-sm text-slate-600">Block {item.block || '-'} | Fiber length {item.fiberLength} km | Cost {formatCurrency(item.estimatedCost)} | Risk {item.riskScore}/100 | Feasibility {item.feasibilityScore || 70}/100</p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1181,7 +1190,7 @@ function buildReport(form, plan) {
     plan.note,
     '',
     'Disclaimer',
-    'This Phase 1 MVP report uses mock data and deterministic planning assumptions. It is not an official sanction, tender document, or final DPR.',
+    'This route planning report is intended for departmental screening and field verification. It is not an administrative sanction, tender document, or final DPR.',
   ].join('\n');
 }
 
