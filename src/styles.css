@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+.input {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid rgb(203 213 225);
+  background: white;
+  padding: 0.75rem 0.875rem;
+  color: #0b1f3a;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.input:focus {
+  border-color: #1769e0;
+  box-shadow: 0 0 0 4px rgba(23, 105, 224, 0.12);
+}
+
+.map-label {
+  fill: #0b1f3a;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.map-label-small {
+  fill: #33546a;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.map-metric {
+  fill: #0f9f6e;
+  font-size: 26px;
+  font-weight: 800;
+}
