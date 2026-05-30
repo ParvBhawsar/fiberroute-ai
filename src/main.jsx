@@ -25,6 +25,7 @@ import { userMessageFromError } from './services/apiClient';
 import { searchNominatimLocations } from './services/nominatim';
 import { DEFAULT_INFRASTRUCTURE_RADIUS_METERS, fetchNearbyInfrastructure } from './services/overpass';
 import { calculateOsrmRoute, calculateStraightLineRoute } from './services/osrm';
+import { getRoutePlans, saveRoutePlan, updateRoutePlanStatus } from './services/routePlanStorage';
 import './styles.css';
 
 const BASE_COST_PER_KM = 430000;
@@ -89,24 +90,61 @@ const initialForm = {
 };
 
 const initialPlans = [
-  { routeId: 'FRAI-MH-NSK-018', district: 'Nashik', block: 'Dindori', village: 'Devgaon', fiberLength: 12.1, estimatedCost: 7820000, status: 'Approved', riskScore: 58, feasibilityScore: 72, updatedOn: '28 May 2026' },
-  { routeId: 'FRAI-MP-MDL-044', district: 'Mandla', block: 'Bichhiya', village: 'Bijadandi', fiberLength: 16.8, estimatedCost: 12150000, status: 'Field Verification Required', riskScore: 82, feasibilityScore: 56, updatedOn: '27 May 2026' },
-  { routeId: 'FRAI-OD-KLD-027', district: 'Kalahandi', block: 'Thuamul Rampur', village: 'Thuamul', fiberLength: 9.6, estimatedCost: 6640000, status: 'Under Review', riskScore: 64, feasibilityScore: 68, updatedOn: '27 May 2026' },
-  { routeId: 'FRAI-RJ-BMR-011', district: 'Barmer', block: 'Chohtan', village: 'Chohtan', fiberLength: 7.4, estimatedCost: 4380000, status: 'Draft', riskScore: 34, feasibilityScore: 84, updatedOn: '26 May 2026' },
+  { routeId: 'FRAI-MH-NSK-DVG-018', district: 'Nashik', block: 'Dindori', village: 'Devgaon', fiberLength: 12.1, estimatedCost: 7820000, status: 'Approved', riskScore: 58, feasibilityScore: 72, updatedOn: '28 May 2026' },
+  { routeId: 'FRAI-MH-NDB-MLG-044', district: 'Nandurbar', block: 'Akkalkuwa', village: 'Molgi', fiberLength: 16.8, estimatedCost: 12150000, status: 'Field Verification Required', riskScore: 82, feasibilityScore: 56, updatedOn: '27 May 2026' },
+  { routeId: 'FRAI-MH-GDC-MRM-027', district: 'Gadchiroli', block: 'Dhanora', village: 'Murumgaon', fiberLength: 9.6, estimatedCost: 6640000, status: 'Under Review', riskScore: 64, feasibilityScore: 68, updatedOn: '27 May 2026' },
+  { routeId: 'FRAI-MH-PLG-ZAP-011', district: 'Palghar', block: 'Jawhar', village: 'Zap', fiberLength: 7.4, estimatedCost: 4380000, status: 'Draft', riskScore: 34, feasibilityScore: 84, updatedOn: '26 May 2026' },
 ];
 
 const initialSurveys = [
-  { routeId: 'FRAI-MP-MDL-044', village: 'Bijadandi', officer: 'A. Verma', status: 'Assigned', difficulty: 'High', remarks: 'Forest edge alignment to be validated.' },
-  { routeId: 'FRAI-OD-KLD-027', village: 'Thuamul', officer: 'S. Pradhan', status: 'In Progress', difficulty: 'Medium', remarks: 'River crossing photographs pending.' },
-  { routeId: 'FRAI-MH-NSK-018', village: 'Devgaon', officer: 'R. Patil', status: 'Completed', difficulty: 'Medium', remarks: 'Existing poles available near school road.' },
+  { routeId: 'FRAI-MH-NDB-MLG-044', village: 'Molgi', officer: 'A. Pawara', status: 'Assigned', difficulty: 'High', remarks: 'Hill approach and forest-edge alignment require field validation.' },
+  { routeId: 'FRAI-MH-GDC-MRM-027', village: 'Murumgaon', officer: 'S. Atram', status: 'In Progress', difficulty: 'Medium', remarks: 'River crossing photographs and road shoulder width pending.' },
+  { routeId: 'FRAI-MH-NSK-DVG-018', village: 'Devgaon', officer: 'R. Patil', status: 'Completed', difficulty: 'Medium', remarks: 'Existing poles available near school road and Gram Panchayat office.' },
 ];
 
 const baseActivities = [
-  'Admin approved route FRAI-MH-NSK-018 for Devgaon.',
-  'Survey status updated for FRAI-OD-KLD-027.',
-  'Plan submitted for review by Nashik district office.',
-  'Route generated for Bijadandi village.',
+  'Admin approved route FRAI-MH-NSK-DVG-018 for Devgaon.',
+  'Survey status updated for FRAI-MH-GDC-MRM-027 in Murumgaon.',
+  'Plan submitted for review by Nashik district planning office.',
+  'Route generated for Molgi village in Nandurbar district.',
 ];
+
+function formatSavedRouteDate(value) {
+  if (!value) return 'Today';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Today';
+  return new Intl.DateTimeFormat('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function savedRouteToPlanRecord(route) {
+  return {
+    routeId: route.routeId,
+    district: route.district,
+    block: route.block,
+    village: route.village,
+    fiberLength: route.roadDistanceKm ?? 0,
+    estimatedCost: route.estimatedCost ?? 0,
+    status: route.status || 'Draft',
+    riskScore: route.riskScore,
+    feasibilityScore: route.feasibilityScore,
+    updatedOn: formatSavedRouteDate(route.updatedAt),
+    isSavedRoute: true,
+    detail: route,
+  };
+}
+
+function getSavedPlanRecords(onError) {
+  try {
+    return getRoutePlans().map(savedRouteToPlanRecord);
+  } catch (error) {
+    onError?.(userMessageFromError(error, 'Saved route files could not be loaded. Existing dashboard data remains available.'));
+    return [];
+  }
+}
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('en-IN', {
@@ -360,15 +398,52 @@ function PortalHeader({ session, onLogout }) {
 }
 
 function OperationalSidebar({ role, plan }) {
+  const [activeSection, setActiveSection] = useState(() => window.location.hash.replace('#', '') || 'dashboard');
   const items = [
     ['Dashboard', 'dashboard', FileText],
-    ['Planning Form', 'route-planning', MapPinned],
-    ['GIS Map Panel', 'gis-preview', Layers3],
-    ['Route Output', 'route-output', Gauge],
-    ['Plans Table', 'plans-table', TableProperties],
-    ['Activity Feed', 'activity-feed', Milestone],
-    ['Report Download', 'report-download', Download],
+    ['Route Planning', 'route-planning', MapPinned],
+    ['Saved Routes', 'saved-routes', TableProperties],
+    ['Reports', 'reports', Download],
+    ['Impact/About', 'impact-about', Milestone],
   ];
+
+  useEffect(() => {
+    const handleHashChange = () => {
+      const nextSection = window.location.hash.replace('#', '');
+      if (nextSection) setActiveSection(nextSection);
+    };
+
+    if (typeof IntersectionObserver === 'undefined') {
+      window.addEventListener('hashchange', handleHashChange);
+      handleHashChange();
+      return () => window.removeEventListener('hashchange', handleHashChange);
+    }
+
+    const visibleSections = items
+      .map(([, id]) => document.getElementById(id))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntry = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visibleEntry?.target?.id) {
+          setActiveSection(visibleEntry.target.id);
+        }
+      },
+      { rootMargin: '-20% 0px -65% 0px', threshold: [0.08, 0.2, 0.4] },
+    );
+
+    visibleSections.forEach((section) => observer.observe(section));
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange();
+
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      observer.disconnect();
+    };
+  }, []);
 
   return (
     <aside className="w-full max-w-full overflow-hidden border-b border-slate-300 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r xl:w-72">
@@ -378,16 +453,24 @@ function OperationalSidebar({ role, plan }) {
         <p className="mt-2 break-words text-xs leading-5 text-slate-600">Current route file: <span className="font-semibold">{plan.routeId}</span></p>
       </div>
       <nav className="grid grid-cols-1 gap-1 p-3 text-sm font-semibold sm:grid-cols-2 lg:grid-cols-1">
-        {items.map(([label, id, Icon]) => (
-          <a key={id} href={`#${id}`} className="flex min-w-0 items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2 text-slate-700 hover:border-gov-blue hover:bg-white hover:text-gov-navy">
+        {items.map(([label, id, Icon]) => {
+          const isActive = activeSection === id;
+          return (
+          <a
+            key={id}
+            href={`#${id}`}
+            onClick={() => setActiveSection(id)}
+            className={`flex min-w-0 items-center gap-2 border px-3 py-2.5 transition ${isActive ? 'border-gov-navy bg-gov-navy text-white shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-gov-blue hover:bg-white hover:text-gov-navy'}`}
+          >
             <Icon size={16} />
             <span className="truncate">{label}</span>
           </a>
-        ))}
+          );
+        })}
       </nav>
       <div className="hidden border-t border-slate-200 p-4 text-xs leading-5 text-slate-600 lg:block">
-        <p className="font-semibold uppercase tracking-wide text-gov-navy">Operational Scope</p>
-        <p className="mt-2">Route planning, field verification, review workflow, and monitoring records.</p>
+        <p className="font-semibold uppercase tracking-wide text-gov-navy">Demo Flow</p>
+        <p className="mt-2">Dashboard &gt; Plan Route &gt; Save Route &gt; Review &gt; Export Report</p>
       </div>
     </aside>
   );
@@ -402,30 +485,35 @@ function DashboardCard({ icon: Icon, label, value, helper, accent = 'blue' }) {
   };
 
   return (
-    <div className={`min-w-0 max-w-full overflow-hidden border border-slate-300 border-l-4 bg-white p-4 ${accents[accent]}`}>
-      <div className="flex items-start justify-between gap-4">
+    <div className={`min-w-0 max-w-full overflow-hidden border border-slate-300 border-l-4 bg-white p-4 sm:min-h-[128px] ${accents[accent]}`}>
+      <div className="flex h-full items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-600">{label}</p>
           <p className="mt-2 break-words text-xl font-bold text-gov-navy 2xl:text-2xl">{value}</p>
           {helper ? <p className="mt-1 text-xs font-medium text-slate-500">{helper}</p> : null}
         </div>
-        <Icon size={24} />
+        <Icon className="shrink-0" size={24} />
       </div>
     </div>
   );
 }
 
 function StatusBadge({ status }) {
-  return <span className={`inline-flex min-w-24 items-center justify-center whitespace-normal border px-2.5 py-1 text-center text-xs font-bold uppercase leading-4 tracking-wide ${statusClass(status)}`}>{status}</span>;
+  return <span className={`inline-flex min-w-28 max-w-48 items-center justify-center whitespace-normal border px-3 py-1.5 text-center text-xs font-bold uppercase leading-4 tracking-wide ${statusClass(status)}`}>{status}</span>;
 }
 
 function PortalDashboard() {
   const [session, setSession] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [plan, setPlan] = useState(() => generatePlan(initialForm));
-  const [plans, setPlans] = useState(initialPlans);
+  const [savedPlans, setSavedPlans] = useState(() => getSavedPlanRecords());
+  const [draftPlans, setDraftPlans] = useState(initialPlans);
+  const [selectedRouteFile, setSelectedRouteFile] = useState(null);
   const [surveys, setSurveys] = useState(initialSurveys);
   const [activities, setActivities] = useState(baseActivities);
+  const [portalMessage, setPortalMessage] = useState({ status: 'info', message: '' });
+  const [updatingRouteId, setUpdatingRouteId] = useState('');
+  const plans = savedPlans.length ? savedPlans : draftPlans;
 
   const metrics = useMemo(() => {
     const allPlans = plans;
@@ -447,11 +535,19 @@ function PortalDashboard() {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
+  const refreshSavedPlans = () => {
+    const records = getSavedPlanRecords((message) => {
+      setPortalMessage({ status: 'error', message });
+    });
+    setSavedPlans(records);
+    return records;
+  };
+
   const generateRoute = (event) => {
     event.preventDefault();
     const nextPlan = generatePlan(form);
     setPlan(nextPlan);
-    setPlans((current) => {
+    setDraftPlans((current) => {
       const existingIndex = current.findIndex((item) => item.routeId === nextPlan.routeId);
       const record = {
         routeId: nextPlan.routeId,
@@ -474,11 +570,40 @@ function PortalDashboard() {
   };
 
   const updatePlanStatus = (routeId, status) => {
-    setPlans((current) => current.map((item) => (item.routeId === routeId ? { ...item, status } : item)));
+    if (!routeId) {
+      setPortalMessage({ status: 'error', message: 'Route file could not be updated. Please select a valid route first.' });
+      return;
+    }
+
+    setUpdatingRouteId(routeId);
+    try {
+      updateRoutePlanStatus(routeId, status);
+      refreshSavedPlans();
+      setPortalMessage({ status: 'success', message: `Route ${routeId} marked as ${status}.` });
+    } catch {
+      let draftUpdated = false;
+      setDraftPlans((current) => current.map((item) => {
+        if (item.routeId === routeId) {
+          draftUpdated = true;
+          return { ...item, status };
+        }
+        return item;
+      }));
+      setPortalMessage({
+        status: draftUpdated ? 'success' : 'error',
+        message: draftUpdated ? `Route ${routeId} marked as ${status}.` : 'Route status could not be updated. Saved route data remains visible.',
+      });
+    } finally {
+      setUpdatingRouteId('');
+    }
     setActivities((current) => [`${status} status updated for ${routeId}.`, ...current.slice(0, 5)]);
   };
 
   const submitPlan = () => {
+    if (!plan?.routeId) {
+      setPortalMessage({ status: 'error', message: 'Please generate a route plan before submitting for review.' });
+      return;
+    }
     updatePlanStatus(plan.routeId, 'Under Review');
     setActivities((current) => [`Plan submitted for review: ${plan.routeId}.`, ...current.slice(0, 5)]);
   };
@@ -488,15 +613,26 @@ function PortalDashboard() {
     setActivities((current) => [`Survey ${field} updated for ${routeId}.`, ...current.slice(0, 5)]);
   };
 
+  const openRouteFile = (route) => {
+    if (route.detail) {
+      setSelectedRouteFile(route.detail);
+    }
+  };
+
   const downloadReport = () => {
-    const report = buildReport(form, plan);
-    const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${plan.routeId.toLowerCase()}-planning-report.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      const report = buildReport(form, plan);
+      const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${plan.routeId.toLowerCase()}-planning-report.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setPortalMessage({ status: 'success', message: 'Report exported successfully.' });
+    } catch {
+      setPortalMessage({ status: 'error', message: 'Report could not be exported. Please try again.' });
+    }
   };
 
   return (
@@ -505,8 +641,8 @@ function PortalDashboard() {
       <PortalHeader session={session} onLogout={() => setSession(null)} />
       <div className="w-full max-w-full min-w-0 overflow-x-hidden lg:flex">
         <OperationalSidebar role={session.role} plan={plan} />
-        <main className="min-w-0 max-w-full flex-1 basis-0 overflow-x-hidden px-4 py-5 lg:px-6">
-          <section id="dashboard" className="mb-5 min-w-0 overflow-hidden border border-slate-300 bg-white p-4">
+        <main className="min-w-0 max-w-full flex-1 basis-0 overflow-x-hidden px-3 py-4 sm:px-4 lg:px-6 lg:py-5">
+          <section id="dashboard" className="mb-5 min-w-0 scroll-mt-4 overflow-hidden border border-slate-300 bg-white p-4 sm:p-5">
             <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="min-w-0">
                 <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Operational Dashboard</p>
@@ -526,7 +662,7 @@ function PortalDashboard() {
             </div>
           </section>
 
-          <section className="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <DashboardCard icon={FileText} label="Total Route Plans" value={metrics.totalRoutePlans} helper={`${metrics.approved} approved`} accent="blue" />
             <DashboardCard icon={Users} label="Villages Covered" value={metrics.villagesCovered} helper="unique villages" accent="green" />
             <DashboardCard icon={Route} label="Fiber Length" value={`${formatNumber(metrics.fiberLength)} km`} helper="planned network" accent="blue" />
@@ -535,25 +671,35 @@ function PortalDashboard() {
             <DashboardCard icon={Gauge} label="Avg. Feasibility" value={`${metrics.averageFeasibility}/100`} helper={`${metrics.pendingReviews} pending review`} accent="green" />
           </section>
 
+          <div className="mt-5">
+            <ActionMessage status={portalMessage.status} message={portalMessage.message} />
+          </div>
+
           <RolePanel
             role={session.role}
             form={form}
             plan={plan}
             plans={plans}
+            savedPlanCount={savedPlans.length}
             surveys={surveys}
             activities={activities}
             updateField={updateField}
             generateRoute={generateRoute}
             submitPlan={submitPlan}
             updatePlanStatus={updatePlanStatus}
+            updatingRouteId={updatingRouteId}
+            openRouteFile={openRouteFile}
+            refreshSavedPlans={refreshSavedPlans}
             updateSurvey={updateSurvey}
             downloadReport={downloadReport}
           />
+          <ImpactAbout />
           <footer className="mt-6 border-t border-slate-300 bg-white px-5 py-4 text-center text-sm text-slate-600">
             FiberRoute AI | Rural FiberNet Planning & Monitoring Portal
           </footer>
         </main>
       </div>
+      <RouteFileDetailModal routeFile={selectedRouteFile} onClose={() => setSelectedRouteFile(null)} />
     </div>
   );
 }
@@ -565,12 +711,12 @@ function RolePanel(props) {
     return (
       <PortalGrid>
         <RoleBrief role={role} items={['Monitor district plan submissions', 'Check high-risk route concentration', 'Approve or reject routes for administrative processing']} />
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.82fr)]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.76fr)]">
           <RecentActivity activities={props.activities} />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
         </div>
-        <PlansTable plans={props.plans} onStatus={props.updatePlanStatus} title="District Submitted Plans" canApprove />
-        <ReviewTable plans={props.plans} onStatus={props.updatePlanStatus} />
+        <PlansTable plans={props.plans} savedPlanCount={props.savedPlanCount} onStatus={props.updatePlanStatus} onView={props.openRouteFile} updatingRouteId={props.updatingRouteId} title="District Submitted Plans" canApprove />
+        <ReviewTable plans={props.plans} onStatus={props.updatePlanStatus} updatingRouteId={props.updatingRouteId} />
       </PortalGrid>
     );
   }
@@ -580,9 +726,12 @@ function RolePanel(props) {
       <PortalGrid>
         <RoleBrief role={role} items={['Open assigned survey routes', 'Update terrain difficulty and site remarks', 'Flag routes that need verification before DPR approval']} />
         <SurveyTable surveys={props.surveys} onUpdate={props.updateSurvey} />
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.65fr)]">
-          <GISPreview form={props.form} plan={props.plan} />
-          <RecentActivity activities={props.activities} />
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.65fr)]">
+          <GISPreview form={props.form} plan={props.plan} onRouteSaved={props.refreshSavedPlans} />
+          <div className="grid min-w-0 gap-5">
+            <RecentActivity activities={props.activities} />
+            <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
+          </div>
         </div>
       </PortalGrid>
     );
@@ -592,12 +741,12 @@ function RolePanel(props) {
     return (
       <PortalGrid>
         <RoleBrief role={role} items={['Review current route estimate', 'Check cost, risk, approvals, and feasibility', 'Approve, send back, or mark for field verification']} />
-        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)]">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.72fr)]">
           <RouteOutput plan={props.plan} form={props.form} onSubmit={props.submitPlan} onDownload={props.downloadReport} reviewMode />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
         </div>
-        <ReviewTable plans={props.plans} onStatus={props.updatePlanStatus} />
-        <GISPreview form={props.form} plan={props.plan} />
+        <ReviewTable plans={props.plans} onStatus={props.updatePlanStatus} updatingRouteId={props.updatingRouteId} />
+        <GISPreview form={props.form} plan={props.plan} onRouteSaved={props.refreshSavedPlans} />
       </PortalGrid>
     );
   }
@@ -606,10 +755,10 @@ function RolePanel(props) {
     <PortalGrid>
       <RoleBrief role={role} items={['Create village route plan', 'Generate route output and planning report', 'Submit plan for review by state or authority']} />
       <PlannerForm form={props.form} updateField={props.updateField} onGenerate={props.generateRoute} onSubmit={props.submitPlan} />
-      <GISPreview form={props.form} plan={props.plan} />
+      <GISPreview form={props.form} plan={props.plan} onRouteSaved={props.refreshSavedPlans} />
       <RouteOutput plan={props.plan} form={props.form} onSubmit={props.submitPlan} onDownload={props.downloadReport} />
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.68fr)]">
-        <PlansTable plans={props.plans} onStatus={props.updatePlanStatus} title="Village Route Plans" />
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.68fr)]">
+        <PlansTable plans={props.plans} savedPlanCount={props.savedPlanCount} onStatus={props.updatePlanStatus} onView={props.openRouteFile} updatingRouteId={props.updatingRouteId} title="Village Route Plans" />
         <div className="grid min-w-0 gap-5">
           <RecentActivity activities={props.activities} />
           <ReportDownloadPanel plan={props.plan} form={props.form} onDownload={props.downloadReport} />
@@ -620,20 +769,20 @@ function RolePanel(props) {
 }
 
 function PortalGrid({ children }) {
-  return <div className="mt-5 grid min-w-0 gap-5">{children}</div>;
+  return <div className="mt-5 grid min-w-0 gap-5 lg:gap-6">{children}</div>;
 }
 
 function RoleBrief({ role, items }) {
   return (
-    <section className="min-w-0 max-w-full overflow-hidden border border-slate-300 bg-white p-4">
-      <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+    <section className="min-w-0 max-w-full overflow-hidden border border-slate-300 bg-white p-4 sm:p-5">
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-gov-saffron">Role-based access view</p>
-          <h3 className="text-lg font-bold text-gov-navy">{role} Responsibilities</h3>
+          <h3 className="mt-1 text-lg font-bold text-gov-navy">{role} Responsibilities</h3>
         </div>
-        <div className="grid min-w-0 gap-2 md:grid-cols-3">
+        <div className="grid min-w-0 gap-3 md:grid-cols-3 lg:max-w-4xl">
           {items.map((item) => (
-            <div key={item} className="min-w-0 break-words border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+            <div key={item} className="min-w-0 break-words border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-semibold leading-5 text-slate-700">
               {item}
             </div>
           ))}
@@ -645,22 +794,48 @@ function RoleBrief({ role, items }) {
 
 function SectionCard({ id, icon: Icon, eyebrow, title, children, action, description }) {
   return (
-    <section id={id} className="min-w-0 max-w-full overflow-hidden border border-slate-300 bg-white">
-      <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center bg-slate-100 text-gov-navy">
+    <section id={id} className="min-w-0 max-w-full scroll-mt-4 overflow-hidden border border-slate-300 bg-white">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center bg-slate-100 text-gov-navy">
             <Icon size={20} />
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-wide text-gov-green">{eyebrow}</p>
-            <h3 className="break-words text-lg font-bold text-gov-navy">{title}</h3>
-            {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+            <h3 className="mt-0.5 break-words text-lg font-bold leading-6 text-gov-navy">{title}</h3>
+            {description ? <p className="mt-1 max-w-5xl break-words text-sm leading-6 text-slate-600">{description}</p> : null}
           </div>
         </div>
-        {action}
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
       <div className="min-w-0 p-4 sm:p-5">{children}</div>
     </section>
+  );
+}
+
+function EmptyState({ title, message }) {
+  return (
+    <div className="min-w-0 border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
+      <p className="font-bold text-gov-navy">{title}</p>
+      {message ? <p className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-600">{message}</p> : null}
+    </div>
+  );
+}
+
+function ActionMessage({ status, message }) {
+  if (!message) return null;
+
+  const classes = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-800',
+    error: 'border-red-200 bg-red-50 text-red-700',
+    loading: 'border-blue-200 bg-blue-50 text-blue-800',
+    info: 'border-slate-200 bg-slate-50 text-slate-700',
+  };
+
+  return (
+    <div className={`min-w-0 border px-4 py-3 text-sm font-semibold leading-6 ${classes[status] || classes.info}`}>
+      {message}
+    </div>
   );
 }
 
@@ -695,12 +870,12 @@ function PlannerForm({ form, updateField, onGenerate, onSubmit }) {
           <SelectInput label="River / railway crossing involved" value={form.crossingRequired} options={['Yes', 'No']} onChange={(value) => updateField('crossingRequired', value)} />
           <SelectInput label="Forest clearance expected" value={form.forestClearance} options={['No', 'Yes']} onChange={(value) => updateField('forestClearance', value)} />
         </div>
-        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row">
-          <button className="inline-flex items-center justify-center gap-2 bg-gov-blue px-5 py-3 font-semibold text-white hover:bg-blue-800">
+        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:flex-wrap">
+          <button className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap bg-gov-blue px-5 py-3 font-semibold text-white hover:bg-blue-800 sm:w-auto">
             <Route size={18} />
             Generate Route Plan
           </button>
-          <button type="button" onClick={onSubmit} className="inline-flex items-center justify-center gap-2 border border-gov-green px-5 py-3 font-semibold text-gov-green hover:bg-emerald-50">
+          <button type="button" onClick={onSubmit} className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap border border-gov-green px-5 py-3 font-semibold text-gov-green hover:bg-emerald-50 sm:w-auto">
             <Send size={18} />
             Submit Plan for Review
           </button>
@@ -756,7 +931,7 @@ function RouteOutput({ plan, form, onSubmit, onDownload, reviewMode = false }) {
       description="Preliminary estimate for administrative screening. Field verification is required before final approval."
       action={<StatusBadge status={plan.riskScore >= 75 ? 'Field Verification Required' : 'Draft'} />}
     >
-      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
           <table className="w-full min-w-[620px] text-left text-sm">
             <tbody>
@@ -784,12 +959,12 @@ function RouteOutput({ plan, form, onSubmit, onDownload, reviewMode = false }) {
             <MiniMetric label="Approvals" value={formatCurrency(plan.approvalsCost)} />
             <MiniMetric label="Contingency" value={formatCurrency(plan.contingency)} />
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <button onClick={onDownload} className="inline-flex items-center justify-center gap-2 bg-gov-navy px-4 py-2 text-sm font-semibold text-white hover:bg-blue-950">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button onClick={onDownload} className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap bg-gov-navy px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-950 sm:w-auto">
               <Download size={16} />
               Download Planning Report
             </button>
-            <button onClick={onSubmit} className="inline-flex items-center justify-center gap-2 border border-gov-green px-4 py-2 text-sm font-semibold text-gov-green hover:bg-emerald-50">
+            <button onClick={onSubmit} className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap border border-gov-green px-4 py-2.5 text-sm font-semibold text-gov-green hover:bg-emerald-50 sm:w-auto">
               <Send size={16} />
               Submit for Review
             </button>
@@ -813,7 +988,7 @@ function MiniMetric({ label, value }) {
 function ReportDownloadPanel({ plan, form, onDownload }) {
   return (
     <SectionCard
-      id="report-download"
+      id="reports"
       icon={Download}
       eyebrow="Report Download Section"
       title="Preliminary Planning Report"
@@ -826,7 +1001,7 @@ function ReportDownloadPanel({ plan, form, onDownload }) {
           <DetailRow label="Administrative area" value={`${form.block}, ${form.district}`} />
           <DetailRow label="Report includes" value="Inputs, estimate, risk, approvals, next steps" />
         </div>
-        <button onClick={onDownload} className="inline-flex items-center justify-center gap-2 border border-gov-navy bg-gov-navy px-4 py-3 text-sm font-bold text-white hover:bg-blue-950">
+        <button onClick={onDownload} className="inline-flex w-full items-center justify-center gap-2 whitespace-nowrap border border-gov-navy bg-gov-navy px-4 py-3 text-sm font-bold text-white hover:bg-blue-950 sm:w-auto">
           <Download size={17} />
           Download .txt Report
         </button>
@@ -949,22 +1124,41 @@ function recommendationClass(recommendation) {
   return 'border-blue-200 bg-blue-50 text-blue-800';
 }
 
-function buildRouteIntelligenceReport(routeId, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, recommendation) {
+function sanitizeReportFilePart(value) {
+  return String(value || 'ROUTE')
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 80) || 'ROUTE';
+}
+
+function buildRouteReportFilename(routeId, extension) {
+  return `FiberRouteAI_RouteReport_${sanitizeReportFilePart(routeId)}.${extension}`;
+}
+
+function buildRouteIntelligenceReport(routeId, form, plan, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, recommendation) {
   return {
     projectName: 'FiberRoute AI',
     routeId,
-    startLocation: {
+    location: {
+      district: form?.district || '',
+      block: form?.block || '',
+      village: form?.village || '',
+    },
+    startPoint: {
       label: getRouteEndpointLabel(routePoints[0], selectedLocation, 'Not selected'),
       coordinates: routePoints[0] || null,
     },
-    endLocation: {
+    endPoint: {
       label: getRouteEndpointLabel(routePoints[1], selectedLocation, 'Not selected'),
       coordinates: routePoints[1] || null,
     },
-    routeDistanceKm: roadRoute?.distanceKm || null,
+    roadDistanceKm: roadRoute?.distanceKm || null,
     routeDistanceSource: roadRoute?.source || null,
     estimatedTimeMinutes: roadRoute?.durationMinutes || null,
     estimatedCostInr: costEstimate?.totalProjectCost || null,
+    riskScore: plan?.riskScore ?? null,
+    feasibilityScore: plan?.feasibilityScore ?? null,
     nearbyInfrastructureCounts: {
       schools: infrastructureSummary?.schools || 0,
       hospitals: infrastructureSummary?.healthcare || 0,
@@ -972,41 +1166,89 @@ function buildRouteIntelligenceReport(routeId, routePoints, selectedLocation, ro
       settlements: infrastructureSummary?.settlements || 0,
       majorRoads: infrastructureSummary?.majorRoads || 0,
     },
-    feasibilityRecommendation: recommendation,
+    planningRecommendation: recommendation,
+    status: 'Draft',
     timestamp: new Date().toISOString(),
-    disclaimer: 'Prototype estimate for planning support only',
+    disclaimer: 'Prototype estimate for planning support only.',
   };
 }
 
-function buildRouteIntelligenceText(report) {
+function buildRouteReportText(report) {
+  const infrastructure = report.nearbyInfrastructureCounts || {};
+
   return [
     report.projectName,
-    'Route Intelligence Planning Report',
+    'Route Planning Report',
     '',
     `Route ID: ${report.routeId}`,
+    `Status: ${report.status || '-'}`,
     `Timestamp: ${report.timestamp}`,
     '',
+    'Location Details',
+    `District: ${report.location?.district || '-'}`,
+    `Block: ${report.location?.block || '-'}`,
+    `Village: ${report.location?.village || '-'}`,
+    '',
     'Route Details',
-    `Start: ${report.startLocation.label}`,
-    `Start coordinates: ${report.startLocation.coordinates ? formatCoordinate(report.startLocation.coordinates) : 'Not selected'}`,
-    `End: ${report.endLocation.label}`,
-    `End coordinates: ${report.endLocation.coordinates ? formatCoordinate(report.endLocation.coordinates) : 'Not selected'}`,
-    `Route distance: ${report.routeDistanceKm ?? '-'} km`,
+    `Start point: ${report.startPoint?.label || '-'}`,
+    `Start coordinates: ${report.startPoint?.coordinates ? formatCoordinate(report.startPoint.coordinates) : 'Not selected'}`,
+    `End point: ${report.endPoint?.label || '-'}`,
+    `End coordinates: ${report.endPoint?.coordinates ? formatCoordinate(report.endPoint.coordinates) : 'Not selected'}`,
+    `Road distance: ${report.roadDistanceKm ?? '-'} km`,
     `Distance source: ${report.routeDistanceSource || '-'}`,
     `Estimated time: ${report.estimatedTimeMinutes ?? '-'} minutes`,
     `Estimated cost: ${report.estimatedCostInr ? formatCurrency(report.estimatedCostInr) : '-'}`,
+    `Risk score: ${report.riskScore ?? '-'}`,
+    `Feasibility score: ${report.feasibilityScore ?? '-'}`,
     '',
-    'Nearby Infrastructure Counts',
-    `Schools: ${report.nearbyInfrastructureCounts.schools}`,
-    `Hospitals / clinics: ${report.nearbyInfrastructureCounts.hospitals}`,
-    `Public offices: ${report.nearbyInfrastructureCounts.publicOffices}`,
-    `Settlements: ${report.nearbyInfrastructureCounts.settlements}`,
-    `Major roads: ${report.nearbyInfrastructureCounts.majorRoads}`,
+    'Nearby Infrastructure Summary',
+    `Schools: ${infrastructure.schools || 0}`,
+    `Hospitals / clinics: ${infrastructure.hospitals || 0}`,
+    `Public offices: ${infrastructure.publicOffices || 0}`,
+    `Settlements: ${infrastructure.settlements || 0}`,
+    `Major roads: ${infrastructure.majorRoads || 0}`,
     '',
-    `Feasibility recommendation: ${report.feasibilityRecommendation}`,
+    `Planning recommendation: ${report.planningRecommendation || '-'}`,
     '',
     `Disclaimer: ${report.disclaimer}`,
   ].join('\n');
+}
+
+function buildSavedRouteFileReport(routeFile) {
+  return {
+    projectName: 'FiberRoute AI',
+    routeId: routeFile.routeId,
+    location: {
+      district: routeFile.district || '',
+      block: routeFile.block || '',
+      village: routeFile.village || '',
+    },
+    startPoint: {
+      label: formatRoutePoint(routeFile.startPoint),
+      coordinates: routeFile.startPoint || null,
+    },
+    endPoint: {
+      label: formatRoutePoint(routeFile.endPoint),
+      coordinates: routeFile.endPoint || null,
+    },
+    roadDistanceKm: routeFile.roadDistanceKm ?? null,
+    routeDistanceSource: 'saved route file',
+    estimatedTimeMinutes: routeFile.estimatedTimeMinutes ?? null,
+    estimatedCostInr: routeFile.estimatedCost ?? null,
+    riskScore: routeFile.riskScore ?? null,
+    feasibilityScore: routeFile.feasibilityScore ?? null,
+    nearbyInfrastructureCounts: routeFile.nearbyInfrastructureCounts || {
+      schools: 0,
+      hospitals: 0,
+      publicOffices: 0,
+      settlements: 0,
+      majorRoads: 0,
+    },
+    planningRecommendation: routeFile.recommendation || '',
+    status: routeFile.status || 'Draft',
+    timestamp: new Date().toISOString(),
+    disclaimer: 'Prototype estimate for planning support only.',
+  };
 }
 
 function downloadPlanningArtifact(content, filename, type) {
@@ -1019,7 +1261,7 @@ function downloadPlanningArtifact(content, filename, type) {
   URL.revokeObjectURL(url);
 }
 
-function OsrmRoutePlanner({ routeId }) {
+function OsrmRoutePlanner({ routeId, form, plan, onRouteSaved }) {
   const mapElementRef = useRef(null);
   const mapRef = useRef(null);
   const leafletRef = useRef(null);
@@ -1040,6 +1282,17 @@ function OsrmRoutePlanner({ routeId }) {
   const [infrastructureSummary, setInfrastructureSummary] = useState(null);
   const [infrastructureStatus, setInfrastructureStatus] = useState('idle');
   const [infrastructureError, setInfrastructureError] = useState('');
+  const [savedPlanCount, setSavedPlanCount] = useState(() => {
+    try {
+      return getRoutePlans().length;
+    } catch {
+      return 0;
+    }
+  });
+  const [saveStatus, setSaveStatus] = useState('idle');
+  const [saveMessage, setSaveMessage] = useState('');
+  const [exportStatus, setExportStatus] = useState('idle');
+  const [exportMessage, setExportMessage] = useState('');
   const costEstimate = useMemo(
     () => (roadRoute ? estimateFiberRouteCost(roadRoute.distanceKm, roadRoute.durationMinutes) : null),
     [roadRoute],
@@ -1053,13 +1306,24 @@ function OsrmRoutePlanner({ routeId }) {
     [costEstimate, infrastructureSummary, roadRoute],
   );
   const routeIntelligenceReport = useMemo(
-    () => buildRouteIntelligenceReport(routeId, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, routeRecommendation),
-    [costEstimate, infrastructureSummary, roadRoute, routeId, routePoints, routeRecommendation, selectedLocation],
+    () => buildRouteIntelligenceReport(routeId, form, plan, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, routeRecommendation),
+    [costEstimate, form, infrastructureSummary, plan, roadRoute, routeId, routePoints, routeRecommendation, selectedLocation],
   );
   const routeDistanceLabel = roadRoute?.source === 'straight-line' ? 'Fallback distance' : 'Road distance';
+  const canSearchLocation = locationQuery.trim().length > 1 && locationStatus !== 'loading';
+  const canCalculateRoute = routePoints.length === 2 && routeStatus !== 'loading';
+  const canFetchInfrastructure = Boolean(infrastructureCenter) && infrastructureStatus !== 'loading';
+  const canSaveRoute = Boolean(roadRoute && costEstimate) && saveStatus !== 'loading';
+  const canExportRoute = Boolean(roadRoute && costEstimate);
 
   const searchLocation = (event) => {
     event.preventDefault();
+    if (!locationQuery.trim()) {
+      setLocationStatus('error');
+      setLocationError('Please enter a village, block, district, school, or location first.');
+      return;
+    }
+
     setLocationStatus('loading');
     setLocationError('');
 
@@ -1067,9 +1331,10 @@ function OsrmRoutePlanner({ routeId }) {
       .then((results) => {
         setLocationResults(results);
         setLocationStatus('success');
+        setLocationError(results.length ? '' : 'No matching locations found. Try a nearby village, block, or district name.');
       })
       .catch((error) => {
-        setLocationError(userMessageFromError(error, 'Unable to search for this location.'));
+        setLocationError(userMessageFromError(error, 'Location search could not be completed. Previously selected map data remains visible.'));
         setLocationStatus('error');
       });
   };
@@ -1096,6 +1361,7 @@ function OsrmRoutePlanner({ routeId }) {
         setInfrastructureFeatures(result.features);
         setInfrastructureSummary(result.summary);
         setInfrastructureStatus('success');
+        setInfrastructureError('Nearby infrastructure loaded successfully.');
       })
       .catch((error) => {
         setInfrastructureError(userMessageFromError(error, 'Unable to fetch nearby infrastructure. Previously loaded infrastructure remains visible.'));
@@ -1103,29 +1369,87 @@ function OsrmRoutePlanner({ routeId }) {
       });
   };
 
-  const exportRouteIntelligenceJson = () => {
-    downloadPlanningArtifact(
-      JSON.stringify(routeIntelligenceReport, null, 2),
-      `${routeId.toLowerCase()}-route-intelligence-report.json`,
-      'application/json;charset=utf-8',
-    );
-  };
+  const exportRouteReport = (format) => {
+    if (!canExportRoute) {
+      setExportStatus('error');
+      setExportMessage('Please calculate a route before exporting the planning report.');
+      return;
+    }
 
-  const exportRouteIntelligenceText = () => {
-    downloadPlanningArtifact(
-      buildRouteIntelligenceText(routeIntelligenceReport),
-      `${routeId.toLowerCase()}-route-intelligence-report.txt`,
-      'text/plain;charset=utf-8',
-    );
+    try {
+      if (format === 'json') {
+        downloadPlanningArtifact(
+          JSON.stringify(routeIntelligenceReport, null, 2),
+          buildRouteReportFilename(routeId, 'json'),
+          'application/json;charset=utf-8',
+        );
+      } else {
+        downloadPlanningArtifact(
+          buildRouteReportText(routeIntelligenceReport),
+          buildRouteReportFilename(routeId, 'txt'),
+          'text/plain;charset=utf-8',
+        );
+      }
+      setExportStatus('success');
+      setExportMessage('Report exported successfully.');
+    } catch {
+      setExportStatus('error');
+      setExportMessage('Planning report could not be exported. Please try again.');
+    }
   };
 
   const requestRouteCalculation = () => {
     if (routePoints.length !== 2) {
-      setRouteError('Select both start and end points before calculating the route.');
+      setRouteError('Please select both start and end points first.');
       setRouteStatus('error');
       return;
     }
     setRouteRequestId((current) => current + 1);
+  };
+
+  const saveCurrentRoutePlan = () => {
+    if (!roadRoute || !costEstimate) {
+      setSaveStatus('error');
+      setSaveMessage('Please calculate a route before saving the route file.');
+      return;
+    }
+
+    setSaveStatus('loading');
+    setSaveMessage('Saving route file...');
+
+    try {
+      const timestamp = new Date().toISOString();
+      saveRoutePlan({
+        routeId,
+        district: form.district,
+        block: form.block,
+        village: form.village,
+        startPoint: routePoints[0] || null,
+        endPoint: routePoints[1] || null,
+        roadDistanceKm: roadRoute.distanceKm,
+        estimatedCost: costEstimate.totalProjectCost,
+        riskScore: plan.riskScore,
+        feasibilityScore: plan.feasibilityScore,
+        status: 'Draft',
+        nearbyInfrastructureCounts: {
+          schools: infrastructureSummary?.schools || 0,
+          hospitals: infrastructureSummary?.healthcare || 0,
+          publicOffices: infrastructureSummary?.publicOffices || 0,
+          settlements: infrastructureSummary?.settlements || 0,
+          majorRoads: infrastructureSummary?.majorRoads || 0,
+        },
+        recommendation: routeRecommendation,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+      setSavedPlanCount(getRoutePlans().length);
+      onRouteSaved?.();
+      setSaveStatus('success');
+      setSaveMessage('Route file saved successfully.');
+    } catch (error) {
+      setSaveStatus('error');
+      setSaveMessage(userMessageFromError(error, 'Route file could not be saved.'));
+    }
   };
 
   useEffect(() => {
@@ -1163,7 +1487,7 @@ function OsrmRoutePlanner({ routeId }) {
         window.setTimeout(() => map.invalidateSize(), 120);
       })
       .catch((error) => {
-        if (!cancelled) setMapError(error.message || 'Leaflet map could not be loaded.');
+        if (!cancelled) setMapError('Map could not be loaded. Route planning controls remain available.');
       });
 
     return () => {
@@ -1200,10 +1524,10 @@ function OsrmRoutePlanner({ routeId }) {
         try {
           const fallbackRoute = calculateStraightLineRoute(routePoints[0], routePoints[1]);
           setRoadRoute(fallbackRoute);
-          setRouteError(`${userMessageFromError(error, 'Road route service is unavailable.')} Showing a straight-line planning fallback.`);
+          setRouteError('Route could not be calculated through the road service. Showing available planning data with a straight-line fallback.');
           setRouteStatus('fallback');
         } catch (fallbackError) {
-          setRouteError(userMessageFromError(fallbackError, 'Unable to calculate a fallback route. Previously loaded route remains visible.'));
+          setRouteError('Route could not be calculated. Showing available planning data.');
           setRouteStatus('error');
         }
       });
@@ -1336,7 +1660,7 @@ function OsrmRoutePlanner({ routeId }) {
         </div>
       </div>
 
-      <form onSubmit={searchLocation} className="relative border-b border-slate-300 bg-white p-5">
+      <form onSubmit={searchLocation} className="relative border-b border-slate-300 bg-white p-4 sm:p-5">
         <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
             <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Step 1</p>
@@ -1358,7 +1682,7 @@ function OsrmRoutePlanner({ routeId }) {
               placeholder="Search village, block, district, school, or location"
             />
           </label>
-          <button type="submit" disabled={locationStatus === 'loading'} className="inline-flex w-full items-center justify-center whitespace-nowrap border border-gov-navy bg-gov-navy px-5 py-3 text-sm font-bold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-70 md:w-48">
+          <button type="submit" disabled={!canSearchLocation} className="inline-flex w-full items-center justify-center whitespace-nowrap border border-gov-navy bg-gov-navy px-5 py-3 text-sm font-bold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-70 md:w-48">
             {locationStatus === 'loading' ? 'Searching location...' : 'Search Location'}
           </button>
         </div>
@@ -1385,7 +1709,7 @@ function OsrmRoutePlanner({ routeId }) {
         ) : null}
       </form>
 
-      <div className="grid min-w-0 grid-cols-1 gap-5 bg-slate-50 p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+      <div className="grid min-w-0 grid-cols-1 gap-5 bg-slate-50 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
         <div className="min-w-0 border border-slate-300 bg-white">
           <div className="flex min-w-0 flex-col gap-4 border-b border-slate-300 bg-white p-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
             <div className="min-w-0 flex-1">
@@ -1393,15 +1717,15 @@ function OsrmRoutePlanner({ routeId }) {
               <h4 className="text-lg font-bold leading-6 text-gov-navy">Select start and end points</h4>
               <p className="mt-2 text-sm leading-6 text-slate-600">Click once on the map for the start point, then click again for the end point. Route calculation starts automatically, and you can rerun it with the Calculate Route button.</p>
             </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <button type="button" onClick={() => setRoutePoints(defaultRoutePoints)} className="whitespace-nowrap border border-gov-blue px-4 py-2 text-xs font-bold text-gov-blue hover:bg-blue-50">
+            <div className="flex w-full shrink-0 flex-wrap gap-2 2xl:w-auto">
+              <button type="button" onClick={() => setRoutePoints(defaultRoutePoints)} className="min-w-32 flex-1 whitespace-nowrap border border-gov-blue px-4 py-2.5 text-xs font-bold text-gov-blue hover:bg-blue-50 sm:flex-none">
                 Use Sample Route
               </button>
-              <button type="button" onClick={() => setRoutePoints([])} className="whitespace-nowrap border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={() => setRoutePoints([])} className="min-w-36 flex-1 whitespace-nowrap border border-slate-300 px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 sm:flex-none">
                 Clear Route Points
               </button>
-              <button type="button" onClick={requestRouteCalculation} className="whitespace-nowrap border border-gov-navy bg-gov-navy px-4 py-2 text-xs font-bold text-white hover:bg-blue-950">
-                Calculate Route
+              <button type="button" onClick={requestRouteCalculation} disabled={!canCalculateRoute} className="min-w-36 flex-1 whitespace-nowrap border border-gov-navy bg-gov-navy px-4 py-2.5 text-xs font-bold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none">
+                {routeStatus === 'loading' ? 'Calculating...' : 'Calculate Route'}
               </button>
             </div>
           </div>
@@ -1462,21 +1786,25 @@ function OsrmRoutePlanner({ routeId }) {
                 <button
                   type="button"
                   onClick={fetchInfrastructure}
-                  disabled={infrastructureStatus === 'loading'}
-                  className="whitespace-nowrap border border-gov-green bg-gov-green px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
+                  disabled={!canFetchInfrastructure}
+                  className="w-full whitespace-nowrap border border-gov-green bg-gov-green px-4 py-3 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {infrastructureStatus === 'loading' ? 'Fetching Infrastructure...' : 'Fetch Nearby Infrastructure'}
                 </button>
                 <p className="text-xs leading-5 text-slate-600">
                   Focus: {infrastructureCenter ? formatCoordinate(infrastructureCenter) : 'Search a location or select route points'}
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-2">
                   <InfraCount label="Schools" value={infrastructureSummary?.schools || 0} />
                   <InfraCount label="Health" value={infrastructureSummary?.healthcare || 0} />
                   <InfraCount label="Public offices" value={infrastructureSummary?.publicOffices || 0} />
                   <InfraCount label="Settlements" value={infrastructureSummary?.settlements || 0} />
                 </div>
-                {infrastructureError ? <p className="break-words text-xs font-semibold leading-5 text-red-700">{infrastructureError}</p> : null}
+                {infrastructureError ? (
+                  <p className={`break-words text-xs font-semibold leading-5 ${infrastructureStatus === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+                    {infrastructureError}
+                  </p>
+                ) : null}
                 {infrastructureFeatures.length ? (
                   <div className="max-h-40 overflow-y-auto border border-slate-200">
                     {infrastructureFeatures.slice(0, 10).map((feature) => (
@@ -1491,6 +1819,8 @@ function OsrmRoutePlanner({ routeId }) {
                       </div>
                     ))}
                   </div>
+                ) : infrastructureStatus === 'success' ? (
+                  <EmptyState title="No nearby infrastructure found" message="Try a broader planning area or select another route point." />
                 ) : null}
               </div>
             </div>
@@ -1508,18 +1838,36 @@ function OsrmRoutePlanner({ routeId }) {
                 <div className={`border px-3 py-2 text-xs font-bold uppercase tracking-wide ${recommendationClass(routeRecommendation)}`}>
                   Planning recommendation: {routeRecommendation}
                 </div>
+                <div className={`border px-3 py-2 text-xs font-semibold ${saveStatus === 'error' ? 'border-red-200 bg-red-50 text-red-700' : saveStatus === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                  Saved route files in browser: {savedPlanCount}
+                  {saveMessage ? <span className="mt-1 block break-words">{saveMessage}</span> : null}
+                </div>
+                <div className={`border px-3 py-2 text-xs font-semibold ${exportStatus === 'error' ? 'border-red-200 bg-red-50 text-red-700' : exportStatus === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                  Export planning report
+                  {exportMessage ? <span className="mt-1 block break-words">{exportMessage}</span> : <span className="mt-1 block break-words">Download a readable route planning report for the current route file.</span>}
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <button
                     type="button"
-                    onClick={exportRouteIntelligenceJson}
-                    className="whitespace-nowrap border border-gov-navy bg-gov-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-950"
+                    onClick={saveCurrentRoutePlan}
+                    disabled={!canSaveRoute}
+                    className="whitespace-nowrap border border-gov-green bg-gov-green px-3 py-3 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saveStatus === 'loading' ? 'Saving Route...' : 'Save Route File'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportRouteReport('json')}
+                    disabled={!canExportRoute}
+                    className="whitespace-nowrap border border-gov-navy bg-gov-navy px-3 py-3 text-xs font-bold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Export Report JSON
                   </button>
                   <button
                     type="button"
-                    onClick={exportRouteIntelligenceText}
-                    className="whitespace-nowrap border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                    onClick={() => exportRouteReport('txt')}
+                    disabled={!canExportRoute}
+                    className="whitespace-nowrap border border-slate-300 bg-white px-3 py-3 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:col-span-2"
                   >
                     Export Report TXT
                   </button>
@@ -1544,8 +1892,8 @@ function SummaryRow({ label, value }) {
 
 function InfraCount({ label, value }) {
   return (
-    <div className="border border-slate-200 bg-slate-50 px-2 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+    <div className="min-w-0 border border-slate-200 bg-slate-50 px-3 py-3">
+      <p className="break-words text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 text-base font-extrabold text-gov-navy">{value}</p>
     </div>
   );
@@ -1565,13 +1913,13 @@ function WorkflowStep({ number, label, active }) {
 function RouteStatCard({ label, value }) {
   return (
     <div className="min-w-0 border border-slate-200 bg-slate-50 px-4 py-3">
-      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="whitespace-nowrap text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-1 min-w-0 break-words text-sm font-extrabold leading-5 text-gov-navy">{value}</p>
     </div>
   );
 }
 
-function GISPreview({ form, plan }) {
+function GISPreview({ form, plan, onRouteSaved }) {
   const riskZoneLabel = plan.riskScore >= 75 ? 'High-risk clearance zone' : plan.riskScore >= 50 ? 'Moderate-risk crossing zone' : 'Low-risk execution zone';
   const riskFill = plan.riskScore >= 75 ? '#fee2e2' : plan.riskScore >= 50 ? '#fef3c7' : '#dcfce7';
   const riskStroke = plan.riskScore >= 75 ? '#dc2626' : plan.riskScore >= 50 ? '#c76a16' : '#1f7a4d';
@@ -1585,7 +1933,7 @@ function GISPreview({ form, plan }) {
       description="Infrastructure planning sketch with administrative boundary, proposed alignment, crossing points, terrain risk zones, and route metadata."
     >
       <div className="grid min-w-0 gap-5">
-        <OsrmRoutePlanner routeId={plan.routeId} />
+        <OsrmRoutePlanner routeId={plan.routeId} form={form} plan={plan} onRouteSaved={onRouteSaved} />
         <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
           <div className="w-full min-w-0 max-w-full overflow-hidden border border-slate-400 bg-[#eef3ef]">
           <div className="border-b border-slate-300 bg-white px-4 py-3">
@@ -1751,13 +2099,163 @@ function MapMetadataRow({ label, value }) {
   );
 }
 
-function PlansTable({ plans, onStatus, title, canApprove = false }) {
-  const headers = ['Route ID', 'District', 'Block', 'Village', 'Fiber Length', 'Estimated Cost', 'Status', 'Risk', 'Feasibility', 'Updated', 'Action'];
+function formatRoutePoint(point) {
+  if (!point || typeof point.lat !== 'number' || typeof point.lng !== 'number') {
+    return 'Not available';
+  }
+  return `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
+}
+
+function RouteFileMetric({ label, value, children }) {
+  return (
+    <div className="min-w-0 border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+      <div className="mt-2 min-w-0 break-words text-base font-bold text-gov-navy">
+        {children || value}
+      </div>
+    </div>
+  );
+}
+
+function InfrastructureCountRow({ label, value }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-4 border-b border-slate-200 py-3 last:border-0">
+      <span className="min-w-0 break-words text-sm font-semibold text-slate-600">{label}</span>
+      <span className="whitespace-nowrap text-sm font-bold text-gov-navy">{value ?? 0}</span>
+    </div>
+  );
+}
+
+function RouteFileDetailModal({ routeFile, onClose }) {
+  const [exportFeedback, setExportFeedback] = useState({ status: 'idle', message: '' });
+
+  useEffect(() => {
+    setExportFeedback({ status: 'idle', message: '' });
+  }, [routeFile?.routeId]);
+
+  if (!routeFile) return null;
+
+  const infrastructure = routeFile.nearbyInfrastructureCounts || {};
+  const distance = routeFile.roadDistanceKm != null ? `${formatNumber(routeFile.roadDistanceKm)} km` : 'Not available';
+  const estimatedCost = routeFile.estimatedCost != null ? formatCurrency(routeFile.estimatedCost) : 'Not available';
+  const exportSavedRouteReport = (format) => {
+    try {
+      const report = buildSavedRouteFileReport(routeFile);
+      if (format === 'json') {
+        downloadPlanningArtifact(
+          JSON.stringify(report, null, 2),
+          buildRouteReportFilename(routeFile.routeId, 'json'),
+          'application/json;charset=utf-8',
+        );
+      } else {
+        downloadPlanningArtifact(
+          buildRouteReportText(report),
+          buildRouteReportFilename(routeFile.routeId, 'txt'),
+          'text/plain;charset=utf-8',
+        );
+      }
+      setExportFeedback({ status: 'success', message: 'Report exported successfully.' });
+    } catch {
+      setExportFeedback({ status: 'error', message: 'Planning report could not be exported. Please try again.' });
+    }
+  };
 
   return (
-    <SectionCard id="plans-table" icon={TableProperties} eyebrow="Planning Records" title={title}>
+    <div className="fixed inset-0 z-[1000] overflow-y-auto bg-slate-950/50 px-3 py-4 sm:px-5">
+      <div className="mx-auto my-4 w-full max-w-5xl overflow-hidden border border-slate-300 bg-white shadow-xl">
+        <div className="flex min-w-0 flex-col gap-4 border-b border-slate-300 bg-slate-50 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Route File Detail</p>
+            <h2 className="mt-1 truncate text-xl font-bold text-gov-navy sm:text-2xl" title={routeFile.routeId}>{routeFile.routeId}</h2>
+            <p className="mt-2 break-words text-sm leading-6 text-slate-600">
+              {routeFile.village || 'Village not recorded'}, {routeFile.block || 'Block not recorded'}, {routeFile.district || 'District not recorded'}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="inline-flex min-w-24 items-center justify-center whitespace-nowrap border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-gov-navy hover:bg-slate-100">
+            Close
+          </button>
+        </div>
+
+        <div className="grid min-w-0 gap-5 p-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="grid min-w-0 gap-5">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2">
+              <RouteFileMetric label="Route ID" value={routeFile.routeId} />
+              <RouteFileMetric label="Status">
+                <StatusBadge status={routeFile.status || 'Draft'} />
+              </RouteFileMetric>
+              <RouteFileMetric label="District" value={routeFile.district || '-'} />
+              <RouteFileMetric label="Block" value={routeFile.block || '-'} />
+              <RouteFileMetric label="Village" value={routeFile.village || '-'} />
+              <RouteFileMetric label="Distance" value={distance} />
+              <RouteFileMetric label="Estimated Cost" value={estimatedCost} />
+              <RouteFileMetric label="Feasibility Score" value={`${routeFile.feasibilityScore ?? 0}/100`} />
+              <RouteFileMetric label="Risk Score" value={`${routeFile.riskScore ?? 0}/100 ${riskLabel(routeFile.riskScore ?? 0)}`} />
+              <RouteFileMetric label="Updated Date" value={formatSavedRouteDate(routeFile.updatedAt)} />
+            </div>
+
+            <div className="grid min-w-0 gap-3 md:grid-cols-2">
+              <RouteFileMetric label="Start Coordinates" value={formatRoutePoint(routeFile.startPoint)} />
+              <RouteFileMetric label="End Coordinates" value={formatRoutePoint(routeFile.endPoint)} />
+            </div>
+
+            <div className="min-w-0 border border-slate-200 bg-white p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Planning Recommendation</p>
+              <p className="mt-2 break-words text-sm leading-6 text-slate-700">{routeFile.recommendation || 'Recommendation not recorded.'}</p>
+            </div>
+          </div>
+
+          <aside className="min-w-0 border border-slate-300 bg-white">
+            <div className="border-b border-slate-200 bg-gov-navy px-4 py-3 text-white">
+              <p className="text-sm font-bold">Nearby Infrastructure Summary</p>
+              <p className="mt-1 text-xs text-blue-100">Saved counts from the selected route planning file.</p>
+            </div>
+            <div className="p-4">
+              <InfrastructureCountRow label="Schools" value={infrastructure.schools} />
+              <InfrastructureCountRow label="Hospitals / clinics" value={infrastructure.hospitals} />
+              <InfrastructureCountRow label="Public offices" value={infrastructure.publicOffices} />
+              <InfrastructureCountRow label="Villages / settlements" value={infrastructure.settlements} />
+              <InfrastructureCountRow label="Major roads" value={infrastructure.majorRoads} />
+            </div>
+            <div className="border-t border-slate-200 bg-slate-50 p-4">
+              <RouteFileMetric label="Created Date" value={formatSavedRouteDate(routeFile.createdAt)} />
+            </div>
+            <div className="border-t border-slate-200 p-4">
+              <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Export Planning Report</p>
+              <p className="mt-2 text-xs leading-5 text-slate-600">Download the selected route file as a professional planning report.</p>
+              {exportFeedback.message ? (
+                <div className={`mt-3 border px-3 py-2 text-xs font-semibold ${exportFeedback.status === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                  {exportFeedback.message}
+                </div>
+              ) : null}
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-1 2xl:grid-cols-2">
+                <button type="button" onClick={() => exportSavedRouteReport('txt')} className="whitespace-nowrap border border-gov-navy bg-gov-navy px-3 py-2 text-xs font-bold text-white hover:bg-blue-950">
+                  Export TXT
+                </button>
+                <button type="button" onClick={() => exportSavedRouteReport('json')} className="whitespace-nowrap border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-gov-navy hover:bg-slate-50">
+                  Export JSON
+                </button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlansTable({ plans, savedPlanCount = 0, onStatus, onView, updatingRouteId = '', title, canApprove = false }) {
+  const headers = ['Route ID', 'District', 'Block', 'Village', 'Fiber Length', 'Estimated Cost', 'Status', 'Risk', 'Feasibility', 'Updated', 'Action'];
+  const isShowingFallback = savedPlanCount === 0;
+
+  return (
+    <SectionCard id="saved-routes" icon={TableProperties} eyebrow="Saved Routes" title={title} description={isShowingFallback ? 'No route files saved yet. Create a route plan from the planning workflow.' : `${savedPlanCount} saved route file${savedPlanCount === 1 ? '' : 's'} available in this browser.`}>
+      {isShowingFallback ? (
+        <div className="mb-4 border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-800">
+          No route files saved yet. Create a route plan from the planning workflow.
+        </div>
+      ) : null}
       <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
-        <table className="w-full min-w-[1200px] table-fixed text-left text-sm">
+        <table className="w-full min-w-[1280px] table-fixed text-left text-sm">
           <colgroup>
             <col className="w-40" />
             <col className="w-32" />
@@ -1769,7 +2267,7 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
             <col className="w-32" />
             <col className="w-28" />
             <col className="w-32" />
-            <col className="w-44" />
+            <col className="w-60" />
           </colgroup>
           <thead className="bg-gov-navy text-white">
             <tr>
@@ -1781,7 +2279,15 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
           <tbody>
             {plans.map((item) => (
               <tr key={item.routeId} className="border-b border-slate-200 bg-white last:border-0">
-                <td className="break-words px-4 py-3 align-middle font-semibold text-gov-navy">{item.routeId}</td>
+                <td className="break-words px-4 py-3 align-middle font-semibold text-gov-navy">
+                  {item.detail ? (
+                    <button type="button" onClick={() => onView?.(item)} className="max-w-full break-words text-left font-semibold text-gov-navy underline-offset-2 hover:underline">
+                      {item.routeId}
+                    </button>
+                  ) : (
+                    item.routeId
+                  )}
+                </td>
                 <td className="whitespace-nowrap px-4 py-3 align-middle">{item.district}</td>
                 <td className="whitespace-nowrap px-4 py-3 align-middle">{item.block || '-'}</td>
                 <td className="whitespace-nowrap px-4 py-3 align-middle">{item.village}</td>
@@ -1794,11 +2300,15 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
                 <td className="px-4 py-3 align-middle">
                   {canApprove ? (
                     <div className="flex flex-nowrap gap-2">
-                      <button onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
-                      <button onClick={() => onStatus(item.routeId, 'Rejected')} className="min-w-20 whitespace-nowrap border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
+                      {item.detail ? <button type="button" onClick={() => onView?.(item)} className="min-w-16 whitespace-nowrap border border-slate-300 px-3 py-2 text-xs font-semibold text-gov-navy hover:bg-slate-50">View</button> : null}
+                      <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60">Approve</button>
+                      <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Rejected')} className="min-w-20 whitespace-nowrap border border-red-300 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60">Reject</button>
                     </div>
                   ) : (
-                    <button onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-20 whitespace-nowrap border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50">Submit</button>
+                    <div className="flex flex-nowrap gap-2">
+                      {item.detail ? <button type="button" onClick={() => onView?.(item)} className="min-w-16 whitespace-nowrap border border-slate-300 px-3 py-2 text-xs font-semibold text-gov-navy hover:bg-slate-50">View</button> : null}
+                      <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-20 whitespace-nowrap border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60">Submit</button>
+                    </div>
                   )}
                 </td>
               </tr>
@@ -1812,7 +2322,10 @@ function PlansTable({ plans, onStatus, title, canApprove = false }) {
 
 function SurveyTable({ surveys, onUpdate }) {
   return (
-    <SectionCard id="route-planning" icon={ListChecks} eyebrow="Field Survey Module" title="Assigned Survey Routes">
+    <SectionCard id="saved-routes" icon={ListChecks} eyebrow="Field Survey Module" title="Assigned Survey Routes">
+      {!surveys.length ? (
+        <EmptyState title="No survey routes assigned" message="Assigned field survey records will appear here when available." />
+      ) : (
       <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
         <table className="w-full min-w-[980px] table-fixed text-left text-sm">
           <colgroup>
@@ -1854,27 +2367,30 @@ function SurveyTable({ surveys, onUpdate }) {
           </tbody>
         </table>
       </div>
+      )}
     </SectionCard>
   );
 }
 
-function ReviewTable({ plans, onStatus }) {
+function ReviewTable({ plans, onStatus, updatingRouteId = '' }) {
   const reviewPlans = plans.filter((item) => item.status === 'Under Review' || item.status === 'Field Verification Required' || item.status === 'Draft');
 
   return (
-    <SectionCard id="reports" icon={ClipboardCheck} eyebrow="Review Desk" title="Plans Pending Review or Verification">
+    <SectionCard id="review-desk" icon={ClipboardCheck} eyebrow="Review Desk" title="Plans Pending Review or Verification">
       <div className="grid gap-3">
-        {reviewPlans.map((item) => (
+        {!reviewPlans.length ? (
+          <EmptyState title="No plans pending review" message="Submitted or draft route files requiring review will appear here." />
+        ) : reviewPlans.map((item) => (
           <div key={item.routeId} className="min-w-0 border border-slate-300 bg-white p-4">
             <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <p className="break-words font-bold text-gov-navy">{item.routeId} - {item.village}, {item.district}</p>
-                <p className="mt-1 text-sm text-slate-600">Block {item.block || '-'} | Fiber length {item.fiberLength} km | Cost {formatCurrency(item.estimatedCost)} | Risk {item.riskScore}/100 | Feasibility {item.feasibilityScore || 70}/100</p>
+                <p className="mt-1 break-words text-sm leading-6 text-slate-600">Block {item.block || '-'} | Fiber length {item.fiberLength} km | Cost {formatCurrency(item.estimatedCost)} | Risk {item.riskScore}/100 | Feasibility {item.feasibilityScore || 70}/100</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
-                <button onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-24 whitespace-nowrap border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Send Back</button>
-                <button onClick={() => onStatus(item.routeId, 'Field Verification Required')} className="min-w-36 whitespace-nowrap border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">Field Verification</button>
+                <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60">Approve</button>
+                <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-24 whitespace-nowrap border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60">Send Back</button>
+                <button disabled={updatingRouteId === item.routeId} onClick={() => onStatus(item.routeId, 'Field Verification Required')} className="min-w-36 whitespace-nowrap border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60">Field Verification</button>
               </div>
             </div>
           </div>
@@ -1888,10 +2404,45 @@ function RecentActivity({ activities }) {
   return (
     <SectionCard id="activity-feed" icon={Milestone} eyebrow="Activity Feed" title="Recent Portal Activity">
       <div className="grid gap-3">
-        {activities.map((activity, index) => (
+        {!activities.length ? (
+          <EmptyState title="No recent activity" message="Route generation, review, survey, and export activity will appear here." />
+        ) : activities.map((activity, index) => (
           <div key={`${activity}-${index}`} className="flex gap-3 border border-slate-200 bg-slate-50 p-3 text-sm">
             <CheckCircle2 className="mt-0.5 shrink-0 text-gov-green" size={17} />
-            <span className="text-slate-700">{activity}</span>
+            <span className="break-words leading-6 text-slate-700">{activity}</span>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function ImpactAbout() {
+  const impactItems = [
+    ['Faster route planning', 'Assists planners in creating a first-pass route file using GIS-assisted point selection, road routing, and map context.'],
+    ['Cost-aware decisions', 'Provides a planning estimate for distance, deployment cost, feasibility, and risk before detailed field validation.'],
+    ['Rural connectivity support', 'Helps identify nearby schools, health facilities, public offices, settlements, and other demand points around the planning area.'],
+    ['Exportable planning reports', 'Generates readable route reports that can support review discussions, field verification, and preliminary decision-making.'],
+  ];
+
+  return (
+    <SectionCard
+      id="impact-about"
+      icon={ClipboardCheck}
+      eyebrow="Impact / About"
+      title="Why FiberRoute AI Matters"
+      description="FiberRoute AI is a prototype planning portal that supports last-mile FiberNet connectivity planning in rural areas through GIS-assisted route review, infrastructure context, and practical planning estimates."
+    >
+      <div className="mb-5 border border-slate-200 bg-slate-50 p-4">
+        <p className="max-w-5xl text-sm leading-6 text-slate-700">
+          The system assists government and telecom planning teams by estimating route distance, cost, feasibility, and risk while highlighting nearby public infrastructure and demand points. It is designed to reduce manual first-pass planning effort and improve decision-making before detailed survey and DPR preparation.
+        </p>
+      </div>
+      <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {impactItems.map(([label, value]) => (
+          <div key={label} className="min-w-0 border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-bold uppercase tracking-wide text-gov-green">{label}</p>
+            <p className="mt-2 break-words text-sm leading-6 text-slate-700">{value}</p>
           </div>
         ))}
       </div>
