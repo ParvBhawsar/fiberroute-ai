@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   AlertTriangle,
@@ -20,6 +20,11 @@ import {
   TableProperties,
   Users,
 } from 'lucide-react';
+import { FIBER_ROUTE_COST_ASSUMPTIONS, estimateFiberRouteCost } from './config/costEstimation';
+import { userMessageFromError } from './services/apiClient';
+import { searchNominatimLocations } from './services/nominatim';
+import { DEFAULT_INFRASTRUCTURE_RADIUS_METERS, fetchNearbyInfrastructure } from './services/overpass';
+import { calculateOsrmRoute, calculateStraightLineRoute } from './services/osrm';
 import './styles.css';
 
 const BASE_COST_PER_KM = 430000;
@@ -337,7 +342,7 @@ function PortalHeader({ session, onLogout }) {
         <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
           <div className="min-w-0 border border-slate-300 bg-slate-50 px-4 py-2 text-sm">
             <span className="font-semibold text-gov-navy">{session.role}</span>
-            <span className="break-all text-slate-500"> | {session.email}</span>
+            <span className="break-words text-slate-500"> | {session.email}</span>
           </div>
           <button onClick={onLogout} className="border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Logout
@@ -411,7 +416,7 @@ function DashboardCard({ icon: Icon, label, value, helper, accent = 'blue' }) {
 }
 
 function StatusBadge({ status }) {
-  return <span className={`inline-flex border px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${statusClass(status)}`}>{status}</span>;
+  return <span className={`inline-flex min-w-24 items-center justify-center whitespace-normal border px-2.5 py-1 text-center text-xs font-bold uppercase leading-4 tracking-wide ${statusClass(status)}`}>{status}</span>;
 }
 
 function PortalDashboard() {
@@ -831,6 +836,741 @@ function ReportDownloadPanel({ plan, form, onDownload }) {
   );
 }
 
+const LEAFLET_CSS_URL = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+const LEAFLET_JS_URL = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+const defaultRoutePoints = [
+  { lat: 20.0118, lng: 73.7906 },
+  { lat: 20.0418, lng: 73.8334 },
+];
+
+let leafletLoadPromise;
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletLoadPromise) return leafletLoadPromise;
+
+  leafletLoadPromise = new Promise((resolve, reject) => {
+    if (!document.querySelector(`link[href="${LEAFLET_CSS_URL}"]`)) {
+      const stylesheet = document.createElement('link');
+      stylesheet.rel = 'stylesheet';
+      stylesheet.href = LEAFLET_CSS_URL;
+      document.head.appendChild(stylesheet);
+    }
+
+    const existingScript = document.querySelector(`script[src="${LEAFLET_JS_URL}"]`);
+    if (existingScript) {
+      existingScript.addEventListener('load', () => resolve(window.L), { once: true });
+      existingScript.addEventListener('error', () => reject(new Error('Leaflet map library could not be loaded.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = LEAFLET_JS_URL;
+    script.async = true;
+    script.onload = () => resolve(window.L);
+    script.onerror = () => reject(new Error('Leaflet map library could not be loaded.'));
+    document.head.appendChild(script);
+  });
+
+  return leafletLoadPromise;
+}
+
+function formatCoordinate(point) {
+  if (!point) return 'Not selected';
+  return `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
+}
+
+function createRoutePointIcon(leaflet, label, color) {
+  return leaflet.divIcon({
+    className: 'route-point-icon',
+    html: `<span style="background:${color}">${label}</span>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+}
+
+const infrastructureCategoryMeta = {
+  school: { label: 'School', shortLabel: 'S', color: '#0b4f8a' },
+  healthcare: { label: 'Health facility', shortLabel: 'H', color: '#dc2626' },
+  publicOffice: { label: 'Public office', shortLabel: 'G', color: '#c76a16' },
+  settlement: { label: 'Settlement', shortLabel: 'V', color: '#1f7a4d' },
+  majorRoad: { label: 'Major road', shortLabel: 'R', color: '#475569' },
+};
+
+function createInfrastructureIcon(leaflet, category) {
+  const meta = infrastructureCategoryMeta[category] || infrastructureCategoryMeta.publicOffice;
+  return leaflet.divIcon({
+    className: 'infrastructure-point-icon',
+    html: `<span style="background:${meta.color}">${meta.shortLabel}</span>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+function getInfrastructureCenter(selectedLocation, routePoints) {
+  if (selectedLocation) return { lat: selectedLocation.lat, lng: selectedLocation.lng };
+  if (routePoints.length === 1) return routePoints[0];
+  if (routePoints.length >= 2) {
+    return {
+      lat: Number(((routePoints[0].lat + routePoints[1].lat) / 2).toFixed(6)),
+      lng: Number(((routePoints[0].lng + routePoints[1].lng) / 2).toFixed(6)),
+    };
+  }
+  return null;
+}
+
+function getRouteEndpointLabel(point, selectedLocation, fallback) {
+  if (!point) return fallback;
+  if (selectedLocation && Math.abs(point.lat - selectedLocation.lat) < 0.000001 && Math.abs(point.lng - selectedLocation.lng) < 0.000001) {
+    return selectedLocation.displayName;
+  }
+  return formatCoordinate(point);
+}
+
+function getRouteRecommendation(roadRoute, costEstimate, infrastructureSummary) {
+  if (!roadRoute || !costEstimate) return 'Select start and end points to generate planning support.';
+
+  const publicInfrastructureCount =
+    (infrastructureSummary?.schools || 0) +
+    (infrastructureSummary?.healthcare || 0) +
+    (infrastructureSummary?.publicOffices || 0);
+  const highComplexity = roadRoute.distanceKm > 15 || publicInfrastructureCount > 18;
+
+  if (highComplexity) return 'Needs detailed survey';
+  if (roadRoute.distanceKm < 5 && costEstimate.totalProjectCost < 750000) return 'High feasibility';
+  if (roadRoute.distanceKm >= 5 && roadRoute.distanceKm <= 15) return 'Medium feasibility';
+  return 'Needs detailed survey';
+}
+
+function recommendationClass(recommendation) {
+  if (recommendation === 'High feasibility') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (recommendation === 'Medium feasibility') return 'border-amber-200 bg-amber-50 text-amber-800';
+  if (recommendation === 'Needs detailed survey') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-blue-200 bg-blue-50 text-blue-800';
+}
+
+function buildRouteIntelligenceReport(routeId, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, recommendation) {
+  return {
+    projectName: 'FiberRoute AI',
+    routeId,
+    startLocation: {
+      label: getRouteEndpointLabel(routePoints[0], selectedLocation, 'Not selected'),
+      coordinates: routePoints[0] || null,
+    },
+    endLocation: {
+      label: getRouteEndpointLabel(routePoints[1], selectedLocation, 'Not selected'),
+      coordinates: routePoints[1] || null,
+    },
+    routeDistanceKm: roadRoute?.distanceKm || null,
+    routeDistanceSource: roadRoute?.source || null,
+    estimatedTimeMinutes: roadRoute?.durationMinutes || null,
+    estimatedCostInr: costEstimate?.totalProjectCost || null,
+    nearbyInfrastructureCounts: {
+      schools: infrastructureSummary?.schools || 0,
+      hospitals: infrastructureSummary?.healthcare || 0,
+      publicOffices: infrastructureSummary?.publicOffices || 0,
+      settlements: infrastructureSummary?.settlements || 0,
+      majorRoads: infrastructureSummary?.majorRoads || 0,
+    },
+    feasibilityRecommendation: recommendation,
+    timestamp: new Date().toISOString(),
+    disclaimer: 'Prototype estimate for planning support only',
+  };
+}
+
+function buildRouteIntelligenceText(report) {
+  return [
+    report.projectName,
+    'Route Intelligence Planning Report',
+    '',
+    `Route ID: ${report.routeId}`,
+    `Timestamp: ${report.timestamp}`,
+    '',
+    'Route Details',
+    `Start: ${report.startLocation.label}`,
+    `Start coordinates: ${report.startLocation.coordinates ? formatCoordinate(report.startLocation.coordinates) : 'Not selected'}`,
+    `End: ${report.endLocation.label}`,
+    `End coordinates: ${report.endLocation.coordinates ? formatCoordinate(report.endLocation.coordinates) : 'Not selected'}`,
+    `Route distance: ${report.routeDistanceKm ?? '-'} km`,
+    `Distance source: ${report.routeDistanceSource || '-'}`,
+    `Estimated time: ${report.estimatedTimeMinutes ?? '-'} minutes`,
+    `Estimated cost: ${report.estimatedCostInr ? formatCurrency(report.estimatedCostInr) : '-'}`,
+    '',
+    'Nearby Infrastructure Counts',
+    `Schools: ${report.nearbyInfrastructureCounts.schools}`,
+    `Hospitals / clinics: ${report.nearbyInfrastructureCounts.hospitals}`,
+    `Public offices: ${report.nearbyInfrastructureCounts.publicOffices}`,
+    `Settlements: ${report.nearbyInfrastructureCounts.settlements}`,
+    `Major roads: ${report.nearbyInfrastructureCounts.majorRoads}`,
+    '',
+    `Feasibility recommendation: ${report.feasibilityRecommendation}`,
+    '',
+    `Disclaimer: ${report.disclaimer}`,
+  ].join('\n');
+}
+
+function downloadPlanningArtifact(content, filename, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function OsrmRoutePlanner({ routeId }) {
+  const mapElementRef = useRef(null);
+  const mapRef = useRef(null);
+  const leafletRef = useRef(null);
+  const layersRef = useRef([]);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapError, setMapError] = useState('');
+  const [routePoints, setRoutePoints] = useState([]);
+  const [roadRoute, setRoadRoute] = useState(null);
+  const [routeStatus, setRouteStatus] = useState('idle');
+  const [routeError, setRouteError] = useState('');
+  const [routeRequestId, setRouteRequestId] = useState(0);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationResults, setLocationResults] = useState([]);
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('idle');
+  const [locationError, setLocationError] = useState('');
+  const [infrastructureFeatures, setInfrastructureFeatures] = useState([]);
+  const [infrastructureSummary, setInfrastructureSummary] = useState(null);
+  const [infrastructureStatus, setInfrastructureStatus] = useState('idle');
+  const [infrastructureError, setInfrastructureError] = useState('');
+  const costEstimate = useMemo(
+    () => (roadRoute ? estimateFiberRouteCost(roadRoute.distanceKm, roadRoute.durationMinutes) : null),
+    [roadRoute],
+  );
+  const infrastructureCenter = useMemo(
+    () => getInfrastructureCenter(selectedLocation, routePoints),
+    [selectedLocation, routePoints],
+  );
+  const routeRecommendation = useMemo(
+    () => getRouteRecommendation(roadRoute, costEstimate, infrastructureSummary),
+    [costEstimate, infrastructureSummary, roadRoute],
+  );
+  const routeIntelligenceReport = useMemo(
+    () => buildRouteIntelligenceReport(routeId, routePoints, selectedLocation, roadRoute, costEstimate, infrastructureSummary, routeRecommendation),
+    [costEstimate, infrastructureSummary, roadRoute, routeId, routePoints, routeRecommendation, selectedLocation],
+  );
+  const routeDistanceLabel = roadRoute?.source === 'straight-line' ? 'Fallback distance' : 'Road distance';
+
+  const searchLocation = (event) => {
+    event.preventDefault();
+    setLocationStatus('loading');
+    setLocationError('');
+
+    searchNominatimLocations(locationQuery)
+      .then((results) => {
+        setLocationResults(results);
+        setLocationStatus('success');
+      })
+      .catch((error) => {
+        setLocationError(userMessageFromError(error, 'Unable to search for this location.'));
+        setLocationStatus('error');
+      });
+  };
+
+  const selectLocation = (result) => {
+    setSelectedLocation(result);
+    setLocationResults([]);
+    setLocationQuery(result.displayName);
+  };
+
+  const fetchInfrastructure = () => {
+    const center = getInfrastructureCenter(selectedLocation, routePoints);
+    if (!center) {
+      setInfrastructureError('Select a searched location or route point before fetching nearby infrastructure.');
+      setInfrastructureStatus('error');
+      return;
+    }
+
+    setInfrastructureStatus('loading');
+    setInfrastructureError('');
+
+    fetchNearbyInfrastructure(center.lat, center.lng, DEFAULT_INFRASTRUCTURE_RADIUS_METERS)
+      .then((result) => {
+        setInfrastructureFeatures(result.features);
+        setInfrastructureSummary(result.summary);
+        setInfrastructureStatus('success');
+      })
+      .catch((error) => {
+        setInfrastructureError(userMessageFromError(error, 'Unable to fetch nearby infrastructure. Previously loaded infrastructure remains visible.'));
+        setInfrastructureStatus('error');
+      });
+  };
+
+  const exportRouteIntelligenceJson = () => {
+    downloadPlanningArtifact(
+      JSON.stringify(routeIntelligenceReport, null, 2),
+      `${routeId.toLowerCase()}-route-intelligence-report.json`,
+      'application/json;charset=utf-8',
+    );
+  };
+
+  const exportRouteIntelligenceText = () => {
+    downloadPlanningArtifact(
+      buildRouteIntelligenceText(routeIntelligenceReport),
+      `${routeId.toLowerCase()}-route-intelligence-report.txt`,
+      'text/plain;charset=utf-8',
+    );
+  };
+
+  const requestRouteCalculation = () => {
+    if (routePoints.length !== 2) {
+      setRouteError('Select both start and end points before calculating the route.');
+      setRouteStatus('error');
+      return;
+    }
+    setRouteRequestId((current) => current + 1);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadLeaflet()
+      .then((leaflet) => {
+        if (cancelled || !mapElementRef.current) return;
+        leafletRef.current = leaflet;
+
+        const map = leaflet.map(mapElementRef.current, {
+          center: [20.026, 73.812],
+          zoom: 13,
+          scrollWheelZoom: false,
+          attributionControl: true,
+        });
+
+        leaflet
+          .tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; OpenStreetMap contributors',
+          })
+          .addTo(map);
+
+        map.on('click', (event) => {
+          const nextPoint = {
+            lat: Number(event.latlng.lat.toFixed(6)),
+            lng: Number(event.latlng.lng.toFixed(6)),
+          };
+          setRoutePoints((current) => (current.length >= 2 ? [nextPoint] : [...current, nextPoint]));
+        });
+
+        mapRef.current = map;
+        setMapReady(true);
+        window.setTimeout(() => map.invalidateSize(), 120);
+      })
+      .catch((error) => {
+        if (!cancelled) setMapError(error.message || 'Leaflet map could not be loaded.');
+      });
+
+    return () => {
+      cancelled = true;
+      layersRef.current.forEach((layer) => layer.remove());
+      layersRef.current = [];
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (routePoints.length !== 2) {
+      setRoadRoute(null);
+      setRouteError('');
+      setRouteStatus('idle');
+      return undefined;
+    }
+
+    let active = true;
+    setRouteStatus('loading');
+    setRouteError('');
+
+    calculateOsrmRoute(routePoints[0], routePoints[1])
+      .then((result) => {
+        if (!active) return;
+        setRoadRoute(result);
+        setRouteStatus('success');
+      })
+      .catch((error) => {
+        if (!active) return;
+        try {
+          const fallbackRoute = calculateStraightLineRoute(routePoints[0], routePoints[1]);
+          setRoadRoute(fallbackRoute);
+          setRouteError(`${userMessageFromError(error, 'Road route service is unavailable.')} Showing a straight-line planning fallback.`);
+          setRouteStatus('fallback');
+        } catch (fallbackError) {
+          setRouteError(userMessageFromError(fallbackError, 'Unable to calculate a fallback route. Previously loaded route remains visible.'));
+          setRouteStatus('error');
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [routePoints, routeRequestId]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !leafletRef.current) return;
+
+    const leaflet = leafletRef.current;
+    const map = mapRef.current;
+    layersRef.current.forEach((layer) => layer.remove());
+    layersRef.current = [];
+
+    routePoints.forEach((point, index) => {
+      const marker = leaflet
+        .marker([point.lat, point.lng], {
+          icon: createRoutePointIcon(leaflet, index === 0 ? 'S' : 'E', index === 0 ? '#0b4f8a' : '#1f7a4d'),
+        })
+        .addTo(map);
+      marker.bindTooltip(index === 0 ? 'Start point' : 'End point', { direction: 'top' });
+      layersRef.current.push(marker);
+    });
+
+    if (selectedLocation) {
+      const popupContent = document.createElement('div');
+      const title = document.createElement('strong');
+      const detail = document.createElement('div');
+      title.textContent = 'Selected location';
+      detail.textContent = selectedLocation.displayName;
+      popupContent.append(title, detail);
+
+      const locationMarker = leaflet
+        .marker([selectedLocation.lat, selectedLocation.lng], {
+          title: selectedLocation.displayName,
+        })
+        .addTo(map);
+      locationMarker.bindPopup(popupContent);
+      layersRef.current.push(locationMarker);
+    }
+
+    infrastructureFeatures.forEach((feature) => {
+      const marker = leaflet
+        .marker([feature.lat, feature.lng], {
+          icon: createInfrastructureIcon(leaflet, feature.category),
+          title: feature.name,
+        })
+        .addTo(map);
+      marker.bindTooltip(`${infrastructureCategoryMeta[feature.category]?.label || 'Infrastructure'}: ${feature.name}`, {
+        direction: 'top',
+      });
+      layersRef.current.push(marker);
+    });
+
+    if (roadRoute?.geometry?.coordinates?.length) {
+      const routeLatLngs = roadRoute.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const isFallbackRoute = roadRoute.source === 'straight-line';
+      const routeLine = leaflet.polyline(routeLatLngs, {
+        color: isFallbackRoute ? '#c76a16' : '#0b4f8a',
+        weight: 6,
+        opacity: 0.95,
+        dashArray: isFallbackRoute ? '12 10' : undefined,
+      }).addTo(map);
+      const routeCasing = leaflet.polyline(routeLatLngs, {
+        color: '#f4a124',
+        weight: 2,
+        opacity: 0.95,
+        dashArray: isFallbackRoute ? '6 8' : '10 8',
+      }).addTo(map);
+      layersRef.current.push(routeLine, routeCasing);
+      map.fitBounds(routeLine.getBounds(), { padding: [24, 24], maxZoom: 15 });
+      return;
+    }
+
+    if (routePoints.length === 2) {
+      const guideLine = leaflet.polyline(routePoints.map((point) => [point.lat, point.lng]), {
+        color: '#64748b',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '8 8',
+      }).addTo(map);
+      layersRef.current.push(guideLine);
+      map.fitBounds(guideLine.getBounds(), { padding: [24, 24], maxZoom: 15 });
+      return;
+    }
+
+    if (routePoints.length === 1) {
+      map.setView([routePoints[0].lat, routePoints[0].lng], 14);
+    }
+  }, [infrastructureFeatures, mapReady, roadRoute, routePoints, selectedLocation]);
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !selectedLocation) return;
+    mapRef.current.setView([selectedLocation.lat, selectedLocation.lng], 14);
+  }, [mapReady, selectedLocation]);
+
+  const routeStatusText = {
+    idle: routePoints.length === 0 ? 'Click the map to select a start point, then an end point.' : 'Select the end point to calculate the OSRM route.',
+    loading: 'Calculating road-following route through OSRM...',
+    success: 'OSRM road-following route calculated.',
+    fallback: 'Road service unavailable. Straight-line planning fallback is shown.',
+    error: 'Route calculation could not be completed.',
+  };
+
+  return (
+    <div className="w-full min-w-0 max-w-full overflow-hidden border border-slate-400 bg-white">
+      <div className="flex min-w-0 flex-col gap-4 border-b border-slate-300 bg-white p-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold uppercase tracking-wide text-gov-navy">Interactive Route Planning Workflow</p>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-600">Search, select two points, review route intelligence, fetch public infrastructure, and export the planning report.</p>
+        </div>
+        <div className="w-full min-w-0 border border-slate-300 bg-slate-50 px-4 py-3 text-xs lg:w-72 lg:shrink-0">
+          <p className="font-bold uppercase tracking-wide text-slate-500">Current route file</p>
+          <p className="mt-1 truncate font-bold text-gov-navy" title={routeId}>{routeId}</p>
+        </div>
+      </div>
+
+      <div className="w-full overflow-x-auto border-b border-slate-300 bg-slate-50 p-4">
+        <div className="flex min-w-max gap-3">
+          <WorkflowStep number="1" label="Search" active={Boolean(selectedLocation)} />
+          <WorkflowStep number="2" label="Select Points" active={routePoints.length === 2} />
+          <WorkflowStep number="3" label="Calculate" active={Boolean(roadRoute)} />
+          <WorkflowStep number="4" label="Review" active={Boolean(costEstimate)} />
+          <WorkflowStep number="5" label="Fetch Infra" active={Boolean(infrastructureSummary)} />
+          <WorkflowStep number="6" label="Cost" active={Boolean(roadRoute)} />
+          <WorkflowStep number="7" label="Export" active={Boolean(roadRoute)} />
+        </div>
+      </div>
+
+      <form onSubmit={searchLocation} className="relative border-b border-slate-300 bg-white p-5">
+        <div className="mb-4 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Step 1</p>
+            <h4 className="text-base font-bold text-gov-navy">Search planning location</h4>
+          </div>
+          <p className="text-xs leading-5 text-slate-500">Press Enter or click Search</p>
+        </div>
+        <div className="flex min-w-0 flex-col gap-3 md:flex-row">
+          <label className="min-w-0 flex-1">
+            <span className="sr-only">Search village, block, district, school, or location</span>
+            <input
+              className="input"
+              value={locationQuery}
+              onChange={(event) => {
+                setLocationQuery(event.target.value);
+                setLocationResults([]);
+                setLocationError('');
+              }}
+              placeholder="Search village, block, district, school, or location"
+            />
+          </label>
+          <button type="submit" disabled={locationStatus === 'loading'} className="inline-flex w-full items-center justify-center whitespace-nowrap border border-gov-navy bg-gov-navy px-5 py-3 text-sm font-bold text-white hover:bg-blue-950 disabled:cursor-not-allowed disabled:opacity-70 md:w-48">
+            {locationStatus === 'loading' ? 'Searching location...' : 'Search Location'}
+          </button>
+        </div>
+        {locationResults.length ? (
+          <div className="absolute left-4 right-4 top-[calc(100%-0.25rem)] z-[500] max-h-72 overflow-y-auto border border-slate-300 bg-white shadow-lg">
+            {locationResults.map((result) => (
+              <button
+                key={result.placeId}
+                type="button"
+                onClick={() => selectLocation(result)}
+                className="block w-full border-b border-slate-200 px-4 py-3 text-left text-sm last:border-0 hover:bg-blue-50"
+              >
+                <span className="block font-semibold text-gov-navy">{result.displayName.split(',').slice(0, 2).join(',')}</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-600">{result.displayName}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {locationError ? <p className="mt-2 text-xs font-semibold text-red-700">{locationError}</p> : null}
+        {selectedLocation ? (
+          <p className="mt-2 truncate text-xs text-slate-600" title={selectedLocation.displayName}>
+            Map centered on: <span className="font-semibold text-gov-navy">{selectedLocation.displayName}</span>
+          </p>
+        ) : null}
+      </form>
+
+      <div className="grid min-w-0 grid-cols-1 gap-5 bg-slate-50 p-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)]">
+        <div className="min-w-0 border border-slate-300 bg-white">
+          <div className="flex min-w-0 flex-col gap-4 border-b border-slate-300 bg-white p-5 2xl:flex-row 2xl:items-start 2xl:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Step 2</p>
+              <h4 className="text-lg font-bold leading-6 text-gov-navy">Select start and end points</h4>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Click once on the map for the start point, then click again for the end point. Route calculation starts automatically, and you can rerun it with the Calculate Route button.</p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button type="button" onClick={() => setRoutePoints(defaultRoutePoints)} className="whitespace-nowrap border border-gov-blue px-4 py-2 text-xs font-bold text-gov-blue hover:bg-blue-50">
+                Use Sample Route
+              </button>
+              <button type="button" onClick={() => setRoutePoints([])} className="whitespace-nowrap border border-slate-300 px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                Clear Route Points
+              </button>
+              <button type="button" onClick={requestRouteCalculation} className="whitespace-nowrap border border-gov-navy bg-gov-navy px-4 py-2 text-xs font-bold text-white hover:bg-blue-950">
+                Calculate Route
+              </button>
+            </div>
+          </div>
+          <div className="relative min-h-[380px] min-w-0 overflow-hidden bg-slate-100 sm:min-h-[440px] xl:min-h-[520px]">
+          <div ref={mapElementRef} className="leaflet-route-map h-[380px] w-full max-w-full sm:h-[440px] xl:h-[520px]" />
+          {!mapReady && !mapError ? (
+            <div className="absolute inset-0 grid place-items-center bg-slate-100/90 text-sm font-semibold text-gov-navy">
+              Loading map...
+            </div>
+          ) : null}
+          {mapError ? (
+            <div className="absolute inset-0 grid place-items-center bg-slate-100 p-5 text-center text-sm font-semibold text-red-700">
+              {mapError}
+            </div>
+          ) : null}
+          </div>
+        </div>
+
+        <aside className="min-w-0">
+          <div className="grid gap-5 text-sm">
+            <div className="border border-slate-300 bg-white">
+              <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Steps 3-4</p>
+                <h4 className="text-sm font-bold text-gov-navy">Route calculation and estimate</h4>
+              </div>
+              <div className="grid gap-4 p-4">
+                <div className={`border px-3 py-2 text-xs font-semibold ${routeStatus === 'error' ? 'border-red-200 bg-red-50 text-red-700' : routeStatus === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : routeStatus === 'fallback' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-blue-200 bg-blue-50 text-blue-800'}`}>
+                  {routeStatusText[routeStatus]}
+                </div>
+                {routeStatus === 'loading' ? (
+                  <div className="h-2 overflow-hidden bg-slate-200">
+                    <div className="h-full w-2/3 bg-gov-blue osrm-loading-bar" />
+                  </div>
+                ) : null}
+                {routeError ? <p className="break-words text-xs leading-5 text-red-700">{routeError}</p> : null}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <RouteStatCard label="Start point" value={formatCoordinate(routePoints[0])} />
+                  <RouteStatCard label="End point" value={formatCoordinate(routePoints[1])} />
+                  <RouteStatCard label={routeDistanceLabel} value={roadRoute ? `${roadRoute.distanceKm} km` : '-'} />
+                  <RouteStatCard label="Survey time" value={roadRoute ? `${roadRoute.durationMinutes} min` : '-'} />
+                </div>
+                <div className="border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Estimated deployment cost</p>
+                  <p className="mt-1 text-xl font-extrabold text-gov-navy">{costEstimate ? formatCurrency(costEstimate.totalProjectCost) : '-'}</p>
+                  <p className="mt-1 text-xs leading-5 text-slate-600">
+                    {costEstimate ? `${formatCurrency(FIBER_ROUTE_COST_ASSUMPTIONS.fiberLayingCostPerKm)} per km, ${FIBER_ROUTE_COST_ASSUMPTIONS.complexityMultiplier}x complexity, ${formatCurrency(FIBER_ROUTE_COST_ASSUMPTIONS.surveyApprovalOverhead)} overhead.` : 'Cost appears after route calculation.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-slate-300 bg-white">
+              <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Step 5</p>
+                <h4 className="text-sm font-bold text-gov-navy">Nearby public infrastructure</h4>
+              </div>
+              <div className="grid gap-4 p-4">
+                <button
+                  type="button"
+                  onClick={fetchInfrastructure}
+                  disabled={infrastructureStatus === 'loading'}
+                  className="whitespace-nowrap border border-gov-green bg-gov-green px-4 py-2.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {infrastructureStatus === 'loading' ? 'Fetching Infrastructure...' : 'Fetch Nearby Infrastructure'}
+                </button>
+                <p className="text-xs leading-5 text-slate-600">
+                  Focus: {infrastructureCenter ? formatCoordinate(infrastructureCenter) : 'Search a location or select route points'}
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <InfraCount label="Schools" value={infrastructureSummary?.schools || 0} />
+                  <InfraCount label="Health" value={infrastructureSummary?.healthcare || 0} />
+                  <InfraCount label="Public offices" value={infrastructureSummary?.publicOffices || 0} />
+                  <InfraCount label="Settlements" value={infrastructureSummary?.settlements || 0} />
+                </div>
+                {infrastructureError ? <p className="break-words text-xs font-semibold leading-5 text-red-700">{infrastructureError}</p> : null}
+                {infrastructureFeatures.length ? (
+                  <div className="max-h-40 overflow-y-auto border border-slate-200">
+                    {infrastructureFeatures.slice(0, 10).map((feature) => (
+                      <div key={feature.id} className="flex min-w-0 items-start gap-2 border-b border-slate-200 px-3 py-2 text-xs last:border-0">
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white" style={{ backgroundColor: infrastructureCategoryMeta[feature.category]?.color }}>
+                          {infrastructureCategoryMeta[feature.category]?.shortLabel}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block font-bold text-gov-navy">{infrastructureCategoryMeta[feature.category]?.label}</span>
+                          <span className="block break-words text-slate-600">{feature.name}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="border border-slate-300 bg-white">
+              <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-gov-green">Steps 6-7</p>
+                <h4 className="text-sm font-bold text-gov-navy">Feasibility and export</h4>
+              </div>
+              <div className="grid gap-4 p-4">
+                <SummaryRow label="Start location" value={getRouteEndpointLabel(routePoints[0], selectedLocation, 'Not selected')} />
+                <SummaryRow label="End location" value={getRouteEndpointLabel(routePoints[1], selectedLocation, 'Not selected')} />
+                <SummaryRow label="Estimated distance" value={roadRoute ? `${roadRoute.distanceKm} km` : '-'} />
+                <SummaryRow label="Estimated cost" value={costEstimate ? formatCurrency(costEstimate.totalProjectCost) : '-'} />
+                <div className={`border px-3 py-2 text-xs font-bold uppercase tracking-wide ${recommendationClass(routeRecommendation)}`}>
+                  Planning recommendation: {routeRecommendation}
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={exportRouteIntelligenceJson}
+                    className="whitespace-nowrap border border-gov-navy bg-gov-navy px-3 py-2.5 text-xs font-bold text-white hover:bg-blue-950"
+                  >
+                    Export Report JSON
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportRouteIntelligenceText}
+                    className="whitespace-nowrap border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    Export Report TXT
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }) {
+  return (
+    <div className="grid min-w-0 grid-cols-1 gap-1 border-b border-slate-200 pb-3 text-xs last:border-0 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-3">
+      <span className="whitespace-nowrap font-bold uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="min-w-0 break-words font-semibold text-gov-navy sm:text-right">{value}</span>
+    </div>
+  );
+}
+
+function InfraCount({ label, value }) {
+  return (
+    <div className="border border-slate-200 bg-slate-50 px-2 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-base font-extrabold text-gov-navy">{value}</p>
+    </div>
+  );
+}
+
+function WorkflowStep({ number, label, active }) {
+  return (
+    <div className={`flex min-w-[132px] items-center gap-2 border px-3 py-2.5 text-xs ${active ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}>
+      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-extrabold ${active ? 'bg-gov-green text-white' : 'bg-slate-200 text-slate-700'}`}>
+        {number}
+      </span>
+      <span className="whitespace-nowrap font-bold">{label}</span>
+    </div>
+  );
+}
+
+function RouteStatCard({ label, value }) {
+  return (
+    <div className="min-w-0 border border-slate-200 bg-slate-50 px-4 py-3">
+      <p className="whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 min-w-0 break-words text-sm font-extrabold leading-5 text-gov-navy">{value}</p>
+    </div>
+  );
+}
+
 function GISPreview({ form, plan }) {
   const riskZoneLabel = plan.riskScore >= 75 ? 'High-risk clearance zone' : plan.riskScore >= 50 ? 'Moderate-risk crossing zone' : 'Low-risk execution zone';
   const riskFill = plan.riskScore >= 75 ? '#fee2e2' : plan.riskScore >= 50 ? '#fef3c7' : '#dcfce7';
@@ -844,8 +1584,10 @@ function GISPreview({ form, plan }) {
       title="Proposed Route Alignment Map"
       description="Infrastructure planning sketch with administrative boundary, proposed alignment, crossing points, terrain risk zones, and route metadata."
     >
-      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <div className="w-full min-w-0 max-w-full overflow-hidden border border-slate-400 bg-[#eef3ef]">
+      <div className="grid min-w-0 gap-5">
+        <OsrmRoutePlanner routeId={plan.routeId} />
+        <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(340px,1fr)]">
+          <div className="w-full min-w-0 max-w-full overflow-hidden border border-slate-400 bg-[#eef3ef]">
           <div className="border-b border-slate-300 bg-white px-4 py-3">
             <p className="text-sm font-bold uppercase tracking-wide text-gov-navy">Planning Map Sheet</p>
             <p className="mt-1 whitespace-normal text-sm leading-5 text-slate-600">Administrative boundary, road corridor, crossing and terrain risk layers</p>
@@ -963,7 +1705,7 @@ function GISPreview({ form, plan }) {
             </g>
           </svg>
           </div>
-        </div>
+          </div>
         <aside className="min-w-0 border border-slate-400 bg-white">
           <div className="border-b border-slate-300 bg-gov-navy px-4 py-3 text-white">
             <p className="text-sm font-bold uppercase tracking-wide">Route Metadata</p>
@@ -985,6 +1727,7 @@ function GISPreview({ form, plan }) {
             Field note: alignment, crossings, and risk zones are planning layers for departmental review. Final DPR requires verified survey drawings.
           </div>
         </aside>
+      </div>
       </div>
     </SectionCard>
   );
@@ -1009,38 +1752,53 @@ function MapMetadataRow({ label, value }) {
 }
 
 function PlansTable({ plans, onStatus, title, canApprove = false }) {
+  const headers = ['Route ID', 'District', 'Block', 'Village', 'Fiber Length', 'Estimated Cost', 'Status', 'Risk', 'Feasibility', 'Updated', 'Action'];
+
   return (
     <SectionCard id="plans-table" icon={TableProperties} eyebrow="Planning Records" title={title}>
       <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
-        <table className="w-full min-w-[920px] text-left text-sm">
+        <table className="w-full min-w-[1200px] table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-40" />
+            <col className="w-32" />
+            <col className="w-40" />
+            <col className="w-36" />
+            <col className="w-28" />
+            <col className="w-36" />
+            <col className="w-44" />
+            <col className="w-32" />
+            <col className="w-28" />
+            <col className="w-32" />
+            <col className="w-44" />
+          </colgroup>
           <thead className="bg-gov-navy text-white">
             <tr>
-              {['Route ID', 'District', 'Block', 'Village', 'Fiber Length', 'Estimated Cost', 'Status', 'Risk', 'Feasibility', 'Updated', 'Action'].map((item) => (
-                <th key={item} className="px-4 py-3 font-semibold">{item}</th>
+              {headers.map((item) => (
+                <th key={item} className="whitespace-nowrap px-4 py-3 align-middle font-semibold">{item}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {plans.map((item) => (
               <tr key={item.routeId} className="border-b border-slate-200 bg-white last:border-0">
-                <td className="max-w-40 break-words px-4 py-3 font-semibold text-gov-navy">{item.routeId}</td>
-                <td className="px-4 py-3">{item.district}</td>
-                <td className="px-4 py-3">{item.block || '-'}</td>
-                <td className="px-4 py-3">{item.village}</td>
-                <td className="px-4 py-3">{item.fiberLength} km</td>
-                <td className="whitespace-nowrap px-4 py-3">{formatCurrency(item.estimatedCost)}</td>
-                <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
-                <td className="px-4 py-3">{item.riskScore}/100 {riskLabel(item.riskScore)}</td>
-                <td className="px-4 py-3">{item.feasibilityScore || 70}/100</td>
-                <td className="px-4 py-3">{item.updatedOn || 'Today'}</td>
-                <td className="px-4 py-3">
+                <td className="break-words px-4 py-3 align-middle font-semibold text-gov-navy">{item.routeId}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.district}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.block || '-'}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.village}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.fiberLength} km</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{formatCurrency(item.estimatedCost)}</td>
+                <td className="px-4 py-3 align-middle"><StatusBadge status={item.status} /></td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.riskScore}/100 {riskLabel(item.riskScore)}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.feasibilityScore || 70}/100</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.updatedOn || 'Today'}</td>
+                <td className="px-4 py-3 align-middle">
                   {canApprove ? (
-                    <div className="flex gap-2">
-                      <button onClick={() => onStatus(item.routeId, 'Approved')} className="border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
-                      <button onClick={() => onStatus(item.routeId, 'Rejected')} className="border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
+                    <div className="flex flex-nowrap gap-2">
+                      <button onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
+                      <button onClick={() => onStatus(item.routeId, 'Rejected')} className="min-w-20 whitespace-nowrap border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 hover:bg-red-50">Reject</button>
                     </div>
                   ) : (
-                    <button onClick={() => onStatus(item.routeId, 'Under Review')} className="border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50">Submit</button>
+                    <button onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-20 whitespace-nowrap border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50">Submit</button>
                   )}
                 </td>
               </tr>
@@ -1056,32 +1814,40 @@ function SurveyTable({ surveys, onUpdate }) {
   return (
     <SectionCard id="route-planning" icon={ListChecks} eyebrow="Field Survey Module" title="Assigned Survey Routes">
       <div className="w-full min-w-0 max-w-full overflow-x-auto border border-slate-300">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[980px] table-fixed text-left text-sm">
+          <colgroup>
+            <col className="w-40" />
+            <col className="w-36" />
+            <col className="w-32" />
+            <col className="w-44" />
+            <col className="w-44" />
+            <col className="w-72" />
+          </colgroup>
           <thead className="bg-gov-navy text-white">
             <tr>
               {['Route ID', 'Village', 'Officer', 'Survey Status', 'Terrain Difficulty', 'Field Remarks'].map((item) => (
-                <th key={item} className="px-4 py-3 font-semibold">{item}</th>
+                <th key={item} className="whitespace-nowrap px-4 py-3 align-middle font-semibold">{item}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {surveys.map((item) => (
               <tr key={item.routeId} className="border-b border-slate-200 bg-white last:border-0">
-                <td className="px-4 py-3 font-semibold text-gov-navy">{item.routeId}</td>
-                <td className="px-4 py-3">{item.village}</td>
-                <td className="px-4 py-3">{item.officer}</td>
-                <td className="px-4 py-3">
+                <td className="break-words px-4 py-3 align-middle font-semibold text-gov-navy">{item.routeId}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.village}</td>
+                <td className="whitespace-nowrap px-4 py-3 align-middle">{item.officer}</td>
+                <td className="px-4 py-3 align-middle">
                   <select className="table-input" value={item.status} onChange={(event) => onUpdate(item.routeId, 'status', event.target.value)}>
                     {['Assigned', 'In Progress', 'Completed', 'Blocked'].map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-middle">
                   <select className="table-input" value={item.difficulty} onChange={(event) => onUpdate(item.routeId, 'difficulty', event.target.value)}>
                     {['Low', 'Medium', 'High'].map((status) => <option key={status}>{status}</option>)}
                   </select>
                 </td>
-                <td className="px-4 py-3">
-                  <input className="table-input min-w-64" value={item.remarks} onChange={(event) => onUpdate(item.routeId, 'remarks', event.target.value)} />
+                <td className="px-4 py-3 align-middle">
+                  <input className="table-input" value={item.remarks} onChange={(event) => onUpdate(item.routeId, 'remarks', event.target.value)} />
                 </td>
               </tr>
             ))}
@@ -1106,9 +1872,9 @@ function ReviewTable({ plans, onStatus }) {
                 <p className="mt-1 text-sm text-slate-600">Block {item.block || '-'} | Fiber length {item.fiberLength} km | Cost {formatCurrency(item.estimatedCost)} | Risk {item.riskScore}/100 | Feasibility {item.feasibilityScore || 70}/100</p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => onStatus(item.routeId, 'Approved')} className="border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
-                <button onClick={() => onStatus(item.routeId, 'Under Review')} className="border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Send Back</button>
-                <button onClick={() => onStatus(item.routeId, 'Field Verification Required')} className="border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">Field Verification</button>
+                <button onClick={() => onStatus(item.routeId, 'Approved')} className="min-w-20 whitespace-nowrap border border-emerald-300 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Approve</button>
+                <button onClick={() => onStatus(item.routeId, 'Under Review')} className="min-w-24 whitespace-nowrap border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Send Back</button>
+                <button onClick={() => onStatus(item.routeId, 'Field Verification Required')} className="min-w-36 whitespace-nowrap border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50">Field Verification</button>
               </div>
             </div>
           </div>

@@ -105,7 +105,8 @@ th {
 
 td {
   max-width: 18rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
   vertical-align: top;
 }
 
@@ -135,4 +136,64 @@ svg {
   fill: #0a2342;
   font-size: 17px;
   font-weight: 800;
+}
+
+.leaflet-route-map {
+  min-width: 0;
+  max-width: 100%;
+  background: #e5edf3;
+}
+
+.leaflet-container {
+  font-family: inherit;
+}
+
+.route-point-icon {
+  background: transparent;
+  border: 0;
+}
+
+.route-point-icon span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.28);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.infrastructure-point-icon {
+  background: transparent;
+  border: 0;
+}
+
+.infrastructure-point-icon span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 3px 8px rgba(15, 23, 42, 0.24);
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.osrm-loading-bar {
+  animation: osrm-loading 1s ease-in-out infinite alternate;
+}
+
+@keyframes osrm-loading {
+  from {
+    transform: translateX(-70%);
+  }
+
+  to {
+    transform: translateX(120%);
+  }
 }
