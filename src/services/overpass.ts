@@ -1,6 +1,11 @@
 import { UserFacingApiError, requestJson } from './apiClient';
 
-export type InfrastructureCategory = 'school' | 'healthcare' | 'publicOffice' | 'settlement' | 'majorRoad';
+export type InfrastructureCategory =
+  | 'school'
+  | 'healthcare'
+  | 'publicOffice'
+  | 'settlement'
+  | 'majorRoad';
 
 export interface InfrastructureFeature {
   id: string;
@@ -101,7 +106,9 @@ export async function fetchNearbyInfrastructure(
   radiusMeters = DEFAULT_INFRASTRUCTURE_RADIUS_METERS,
 ): Promise<InfrastructureResponse> {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    throw new UserFacingApiError('Select a valid planning point before fetching nearby infrastructure.');
+    throw new UserFacingApiError(
+      'Select a valid planning point before fetching nearby infrastructure.',
+    );
   }
 
   const safeRadiusMeters = Math.max(500, Math.min(Math.round(radiusMeters), 10000));

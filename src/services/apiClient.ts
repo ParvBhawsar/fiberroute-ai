@@ -10,7 +10,10 @@ export interface RequestJsonOptions extends RequestInit {
   serviceName: string;
 }
 
-export async function requestJson<T>(url: string, { timeoutMs = 12000, serviceName, ...options }: RequestJsonOptions): Promise<T> {
+export async function requestJson<T>(
+  url: string,
+  { timeoutMs = 12000, serviceName, ...options }: RequestJsonOptions,
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
@@ -21,20 +24,26 @@ export async function requestJson<T>(url: string, { timeoutMs = 12000, serviceNa
     });
 
     if (!response.ok) {
-      throw new UserFacingApiError(`${serviceName} is temporarily unavailable. Please try again in a few moments.`);
+      throw new UserFacingApiError(
+        `${serviceName} is temporarily unavailable. Please try again in a few moments.`,
+      );
     }
 
     try {
       return (await response.json()) as T;
     } catch {
-      throw new UserFacingApiError(`${serviceName} returned an unreadable response. Please try again.`);
+      throw new UserFacingApiError(
+        `${serviceName} returned an unreadable response. Please try again.`,
+      );
     }
   } catch (error) {
     if (error instanceof UserFacingApiError) throw error;
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new UserFacingApiError(`${serviceName} took too long to respond. Please try again.`);
     }
-    throw new UserFacingApiError(`${serviceName} could not be reached. Check the connection and try again.`);
+    throw new UserFacingApiError(
+      `${serviceName} could not be reached. Check the connection and try again.`,
+    );
   } finally {
     window.clearTimeout(timeoutId);
   }

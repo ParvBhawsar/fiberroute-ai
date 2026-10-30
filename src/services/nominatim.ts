@@ -38,13 +38,16 @@ export async function searchNominatimLocations(query: string): Promise<Nominatim
     countrycodes: 'in',
   });
 
-  const data = await requestJson<NominatimApiResult[]>(`${NOMINATIM_SEARCH_URL}?${params.toString()}`, {
-    serviceName: 'Location search service',
-    timeoutMs: NOMINATIM_TIMEOUT_MS,
-    headers: {
-      Accept: 'application/json',
+  const data = await requestJson<NominatimApiResult[]>(
+    `${NOMINATIM_SEARCH_URL}?${params.toString()}`,
+    {
+      serviceName: 'Location search service',
+      timeoutMs: NOMINATIM_TIMEOUT_MS,
+      headers: {
+        Accept: 'application/json',
+      },
     },
-  });
+  );
   const results = data
     .map((item) => ({
       placeId: item.place_id,
@@ -58,7 +61,9 @@ export async function searchNominatimLocations(query: string): Promise<Nominatim
     .filter((item) => Number.isFinite(item.lat) && Number.isFinite(item.lng));
 
   if (!results.length) {
-    throw new UserFacingApiError('No matching location found. Try a village, block, district, school, or landmark name.');
+    throw new UserFacingApiError(
+      'No matching location found. Try a village, block, district, school, or landmark name.',
+    );
   }
 
   return results;

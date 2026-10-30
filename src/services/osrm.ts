@@ -36,9 +36,14 @@ function isValidCoordinate(point: RouteCoordinate) {
   );
 }
 
-export async function calculateOsrmRoute(start: RouteCoordinate, end: RouteCoordinate): Promise<OsrmRouteResult> {
+export async function calculateOsrmRoute(
+  start: RouteCoordinate,
+  end: RouteCoordinate,
+): Promise<OsrmRouteResult> {
   if (!isValidCoordinate(start) || !isValidCoordinate(end)) {
-    throw new UserFacingApiError('Select valid start and end coordinates before calculating a road route.');
+    throw new UserFacingApiError(
+      'Select valid start and end coordinates before calculating a road route.',
+    );
   }
 
   const coordinates = `${start.lng},${start.lat};${end.lng},${end.lat}`;
@@ -48,18 +53,29 @@ export async function calculateOsrmRoute(start: RouteCoordinate, end: RouteCoord
     steps: 'false',
   });
 
-  const data = await requestJson<OsrmRouteResponse>(`${OSRM_ROUTE_URL}/${coordinates}?${params.toString()}`, {
-    serviceName: 'Road route service',
-    timeoutMs: OSRM_TIMEOUT_MS,
-  });
+  const data = await requestJson<OsrmRouteResponse>(
+    `${OSRM_ROUTE_URL}/${coordinates}?${params.toString()}`,
+    {
+      serviceName: 'Road route service',
+      timeoutMs: OSRM_TIMEOUT_MS,
+    },
+  );
   const route = data.routes?.[0];
 
   if (data.code && data.code !== 'Ok') {
-    throw new UserFacingApiError('A road-following route could not be calculated for the selected points.');
+    throw new UserFacingApiError(
+      'A road-following route could not be calculated for the selected points.',
+    );
   }
 
-  if (!route?.geometry?.coordinates?.length || !Number.isFinite(route.distance) || !Number.isFinite(route.duration)) {
-    throw new UserFacingApiError('No road-following route was found. Select points closer to the road network.');
+  if (
+    !route?.geometry?.coordinates?.length ||
+    !Number.isFinite(route.distance) ||
+    !Number.isFinite(route.duration)
+  ) {
+    throw new UserFacingApiError(
+      'No road-following route was found. Select points closer to the road network.',
+    );
   }
 
   return {
@@ -70,9 +86,14 @@ export async function calculateOsrmRoute(start: RouteCoordinate, end: RouteCoord
   };
 }
 
-export function calculateStraightLineRoute(start: RouteCoordinate, end: RouteCoordinate): OsrmRouteResult {
+export function calculateStraightLineRoute(
+  start: RouteCoordinate,
+  end: RouteCoordinate,
+): OsrmRouteResult {
   if (!isValidCoordinate(start) || !isValidCoordinate(end)) {
-    throw new UserFacingApiError('Select valid start and end coordinates before calculating a fallback route.');
+    throw new UserFacingApiError(
+      'Select valid start and end coordinates before calculating a fallback route.',
+    );
   }
 
   const earthRadiusKm = 6371;
@@ -84,7 +105,9 @@ export function calculateStraightLineRoute(start: RouteCoordinate, end: RouteCoo
   const a =
     Math.sin(latDelta / 2) ** 2 +
     Math.cos(startLat) * Math.cos(endLat) * Math.sin(lngDelta / 2) ** 2;
-  const distanceKm = Number((earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2));
+  const distanceKm = Number(
+    (earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))).toFixed(2),
+  );
 
   return {
     distanceKm,
